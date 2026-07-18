@@ -75,30 +75,44 @@ export interface TokenUsage {
   cachedTokens: number; // cache-read input tokens
 }
 
-/** Cost in USD for a usage record under the given model's pricing. */
-export function calcCost(modelId: string, usage: TokenUsage): number {
+/** USD per 1M tokens for one model — static default or live-resolved. */
+export interface ModelRates {
+  input: number;
+  output: number;
+  cachedInput: number;
+}
+
+/** Static rates for a model (fallback when no live rates are supplied). */
+export function staticRates(modelId: string): ModelRates {
   const m = getModel(modelId);
-  // Unknown model (custom endpoint): fall back to a conservative default.
   const input = m?.input ?? 1;
-  const output = m?.output ?? 5;
-  const cached = m?.cachedInput ?? input * 0.1;
+  return {
+    input,
+    output: m?.output ?? 5,
+    cachedInput: m?.cachedInput ?? input * 0.1,
+  };
+}
+
+/**
+ * Cost in USD for a usage record. Pass `rates` (from src/lib/pricing-live.ts)
+ * to price with live data; omitted → static table.
+ */
+export function calcCost(modelId: string, usage: TokenUsage, rates?: ModelRates): number {
+  const r = rates ?? staticRates(modelId);
   return (
-    (usage.inputTokens * input +
-      usage.outputTokens * output +
-      usage.cachedTokens * cached) /
+    (usage.inputTokens * r.input +
+      usage.outputTokens * r.output +
+      usage.cachedTokens * r.cachedInput) /
     1_000_000
   );
 }
 
-export function costBreakdown(modelId: string, usage: TokenUsage) {
-  const m = getModel(modelId);
-  const input = m?.input ?? 1;
-  const output = m?.output ?? 5;
-  const cached = m?.cachedInput ?? input * 0.1;
+export function costBreakdown(modelId: string, usage: TokenUsage, rates?: ModelRates) {
+  const r = rates ?? staticRates(modelId);
   return {
-    inputCost: (usage.inputTokens * input) / 1_000_000,
-    outputCost: (usage.outputTokens * output) / 1_000_000,
-    cachedCost: (usage.cachedTokens * cached) / 1_000_000,
-    total: calcCost(modelId, usage),
+    inputCost: (usage.inputTokens * r.input) / 1_000_000,
+    outputCost: (usage.outputTokens * r.output) / 1_000_000,
+    cachedCost: (usage.cachedTokens * r.cachedInput) / 1_000_000,
+    total: calcCost(modelId, usage, rates),
   };
 }

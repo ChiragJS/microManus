@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/crypto";
 import { chatCompletion, LlmError, type LlmMessage } from "@/lib/llm";
 import { calcCost, type TokenUsage } from "@/lib/pricing";
+import { getLiveRates } from "@/lib/pricing-live";
 import {
   TASK_CREDITS,
   type AgentStep,
@@ -356,7 +357,9 @@ export async function POST(request: Request) {
         }
 
         // ---- Persist assistant message ----
-        let cost = calcCost(chat.model, usage);
+        // Live rates (daily-cached; falls back to the static table on failure).
+        const rates = await getLiveRates(chat.model);
+        let cost = calcCost(chat.model, usage, rates);
         const { data: saved } = await supabase
           .from("messages")
           .insert({
@@ -416,7 +419,7 @@ export async function POST(request: Request) {
             usage.inputTokens += summaryResult.usage.inputTokens;
             usage.outputTokens += summaryResult.usage.outputTokens;
             usage.cachedTokens += summaryResult.usage.cachedTokens;
-            cost = calcCost(chat.model, usage);
+            cost = calcCost(chat.model, usage, rates);
 
             const summary = (summaryResult.content ?? "").trim();
             if (summary) {

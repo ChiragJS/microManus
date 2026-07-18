@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, KeyRound, Loader2, Plus } from "lucide-react";
 import {
@@ -29,6 +29,29 @@ export default function AddKeyForm() {
 
   const models = useMemo(() => modelsForProvider(provider), [provider]);
   const info = PROVIDERS[provider];
+
+  // Live pricing (daily-cached server-side); static table values until loaded.
+  const [livePricing, setLivePricing] = useState<
+    Record<string, { input: number; output: number }> | null
+  >(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/pricing")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.pricing) setLivePricing(d.pricing);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const priceLabel = (id: string, fallbackIn: number, fallbackOut: number) => {
+    const p = livePricing?.[id];
+    const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
+    return `$${fmt(p?.input ?? fallbackIn)} / $${fmt(p?.output ?? fallbackOut)} per 1M`;
+  };
 
   function onProviderChange(next: Provider) {
     setProvider(next);
@@ -113,7 +136,7 @@ export default function AddKeyForm() {
           >
             {models.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} — ${m.input} / ${m.output} per 1M
+                {m.name} — {priceLabel(m.id, m.input, m.output)}
               </option>
             ))}
           </select>

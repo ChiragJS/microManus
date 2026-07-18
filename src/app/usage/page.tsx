@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { costBreakdown, getModel } from "@/lib/pricing";
+import { getLivePricing } from "@/lib/pricing-live";
 import type { Chat, MessageRow, Profile } from "@/lib/types";
 import TopNav from "@/components/settings/TopNav";
 
@@ -46,6 +47,7 @@ export default async function UsagePage() {
 
   const chatList = (chats as ChatMeta[] | null) ?? [];
   const msgList = (messages as MsgUsage[] | null) ?? [];
+  const pricing = await getLivePricing(); // daily-cached live rates, static fallback
   const credits = (profile as Pick<Profile, "credits"> | null)?.credits ?? 0;
 
   const rows = chatList
@@ -60,7 +62,7 @@ export default async function UsagePage() {
         { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }
       );
       const storedTotal = msgs.reduce((acc, m) => acc + (m.cost ?? 0), 0);
-      const split = costBreakdown(chat.model, usage);
+      const split = costBreakdown(chat.model, usage, pricing[chat.model]);
       return {
         chat,
         messageCount: msgs.length,
