@@ -38,6 +38,7 @@ export function PaywallClient({
   success,
   sessionId,
   canceled,
+  paymentResult = null,
 }: {
   initialCredits: number;
   initialUnlocked: boolean;
@@ -46,6 +47,8 @@ export function PaywallClient({
   success: boolean;
   sessionId: string | null;
   canceled: boolean;
+  /** server-side verdict when returning from Stripe (null = undetermined) */
+  paymentResult?: "success" | "failed" | null;
 }) {
   const router = useRouter();
   const alreadyUnlocked = initialUnlocked && initialCredits > 0;
@@ -65,13 +68,24 @@ export function PaywallClient({
   /** Stripe embedded-checkout client secret — non-null renders the modal */
   const [checkoutSecret, setCheckoutSecret] = useState<string | null>(null);
 
-  // payment-return state
-  const [confirming, setConfirming] = useState(success && Boolean(sessionId));
+  // payment-return state (spinner only when the server verdict is undetermined)
+  const [confirming, setConfirming] = useState(
+    paymentResult === null && success && Boolean(sessionId)
+  );
 
   const ranConfirm = useRef(false);
 
-  // Handle ?success=1&session_id=... — confirm + poll until credited.
+  // Payment successful — brief confirmation, then continue to the app.
   useEffect(() => {
+    if (paymentResult !== "success") return;
+    const t = setTimeout(() => router.replace("/chat"), 2200);
+    return () => clearTimeout(t);
+  }, [paymentResult, router]);
+
+  // Handle ?success=1&session_id=... — client confirm/poll fallback, only when
+  // the server couldn't determine the outcome (Stripe hiccup during render).
+  useEffect(() => {
+    if (paymentResult !== null) return;
     if (!success || !sessionId || ranConfirm.current) return;
     ranConfirm.current = true;
 
@@ -202,6 +216,59 @@ export function PaywallClient({
   }
 
   const heading = alreadyUnlocked ? "Top up credits" : "Unlock MicroManus";
+
+  // ---- Payment result screens (server verdict) ----
+  if (paymentResult === "success") {
+    return (
+      <Shell>
+        <div className="mm-pop-in flex flex-col items-center gap-4 py-8 text-center">
+          <span className="mm-scale-in flex h-14 w-14 items-center justify-center rounded-full bg-ok/15">
+            <CheckCircle2 size={30} className="text-ok" />
+          </span>
+          <div>
+            <p className="text-lg font-medium tracking-tight">Payment successful</p>
+            <p className="mt-1 text-sm text-ink-dim">
+              5 credits added — balance{" "}
+              <span className="font-mono text-ink">{credits}</span>
+            </p>
+          </div>
+          <p className="text-xs text-ink-dim">Taking you to your workspace…</p>
+          <button
+            type="button"
+            onClick={() => router.replace("/chat")}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition-opacity duration-150 hover:opacity-90"
+          >
+            Continue now
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (paymentResult === "failed") {
+    return (
+      <Shell>
+        <div className="mm-pop-in flex flex-col items-center gap-4 py-8 text-center">
+          <span className="mm-scale-in flex h-14 w-14 items-center justify-center rounded-full bg-err/15">
+            <AlertCircle size={30} className="text-err" />
+          </span>
+          <div>
+            <p className="text-lg font-medium tracking-tight">Payment failed</p>
+            <p className="mt-1 text-sm text-ink-dim">
+              The payment didn&apos;t complete — you were not charged.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.replace("/paywall")}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition-opacity duration-150 hover:opacity-90"
+          >
+            Try again
+          </button>
+        </div>
+      </Shell>
+    );
+  }
 
   // ---- Payment-received / confirming overlay ----
   if (confirming) {

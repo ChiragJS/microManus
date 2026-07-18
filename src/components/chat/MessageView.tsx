@@ -30,10 +30,13 @@ function creditLabel(n: number): string {
 
 export default function MessageView({
   message,
+  animate = false,
   openArtifactPath,
   onOpenArtifact,
 }: {
   message: DisplayMessage;
+  /** true for bubbles appended after mount — plays a fade+rise on entry */
+  animate?: boolean;
   openArtifactPath: string | null;
   onOpenArtifact: (a: Artifact) => void;
 }) {
@@ -41,7 +44,7 @@ export default function MessageView({
 
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className={`flex justify-end ${animate ? "mm-msg-in" : ""}`}>
         <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-surface-2 px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-ink">
           {message.content}
         </div>
@@ -69,7 +72,11 @@ export default function MessageView({
   }
 
   return (
-    <div className={`group relative w-full ${message.stopped ? "opacity-80" : ""}`}>
+    <div
+      className={`group relative w-full ${animate ? "mm-msg-in" : ""} ${
+        message.stopped ? "opacity-80" : ""
+      }`}
+    >
       {/* Hover toolbar */}
       {!message.streaming && message.content && (
         <div className="absolute -top-1 right-0 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">

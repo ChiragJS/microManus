@@ -39,7 +39,7 @@ import {
 } from "./liveStore";
 
 const EXAMPLE_PROMPTS = [
-  "Create a report on the recent California forest fires — causes and prevention",
+  "Research and create a report of top schools in India for my kid",
   "Compare the top 3 vector databases in 2026",
   "What happened in AI this week?",
 ];
@@ -195,7 +195,6 @@ export default function ChatWorkspace({
   const [persisted, setPersisted] = useState<DisplayMessage[]>(
     initialMessages.map(fromRow)
   );
-  const [summary, setSummary] = useState<string | null>(activeChat?.summary ?? null);
   const [input, setInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +239,6 @@ export default function ChatWorkspace({
               prev.map((c) => (c.id === id ? { ...c, title: chat.title } : c))
             );
           }
-          if (chat && chat.summary !== undefined) setSummary(chat.summary);
         }
       } catch {
         /* keep the live bubble if reload fails */
@@ -279,7 +277,6 @@ export default function ChatWorkspace({
   // --- Reset per-chat view state when the active thread changes ---
   useEffect(() => {
     setPersisted(initialMessages.map(fromRow));
-    setSummary(activeChat?.summary ?? null);
     setCredits(initialCredits);
     setOpenArtifactPath(null);
     setError(null);
@@ -330,7 +327,6 @@ export default function ChatWorkspace({
     if (liveRun?.creditsRemaining != null) setCredits(liveRun.creditsRemaining);
   }, [liveRun?.creditsRemaining]);
   useEffect(() => {
-    if (liveRun?.summaryUpdate) setSummary(liveRun.summaryUpdate);
   }, [liveRun?.summaryUpdate]);
   useEffect(() => {
     if (liveRun?.titleUpdate && chatId) {
@@ -404,6 +400,14 @@ export default function ChatWorkspace({
     openArtifactPath != null
       ? allArtifacts.find((a) => a.path === openArtifactPath) ?? null
       : null;
+
+  // Bubbles that were appended after mount (live run) animate in; persisted
+  // history renders without motion.
+  const liveIds = new Set<string>();
+  if (liveRun) {
+    liveIds.add(liveRun.assistant.id);
+    liveIds.add(`u-${liveRun.assistant.id}`);
+  }
 
   /* ------------------------------ actions ------------------------------ */
 
@@ -529,14 +533,13 @@ export default function ChatWorkspace({
   const showRail = !openArtifact && (allArtifacts.length > 0 || allSources.length > 0);
 
   return (
-    <div className="fixed inset-0 flex bg-bg text-ink">
+    <div className="fixed inset-0 flex overflow-hidden bg-bg text-ink">
       <Sidebar
         chats={chats}
         activeChatId={chatId}
         apiKeys={apiKeys}
         credits={credits}
         creating={creating}
-        summary={summary}
         onCreateChat={createChat}
         onDeleteChat={deleteChat}
       />
@@ -557,6 +560,7 @@ export default function ChatWorkspace({
                         <MessageView
                           key={m.id}
                           message={m}
+                          animate={liveIds.has(m.id)}
                           openArtifactPath={openArtifactPath}
                           onOpenArtifact={(a) => setOpenArtifactPath(a.path)}
                         />
@@ -576,7 +580,7 @@ export default function ChatWorkspace({
               </div>
 
               {(credits === 0 || error) && (
-                <div className="mx-auto w-full max-w-3xl px-4">
+                <div className="mm-fade-in mx-auto w-full max-w-3xl px-4">
                   {error ? (
                     <p className="flex items-center gap-2 rounded-lg border border-err/40 bg-err/10 px-4 py-2.5 text-sm text-err">
                       <AlertCircle size={16} />
@@ -590,7 +594,7 @@ export default function ChatWorkspace({
                       </span>
                       <Link
                         href="/paywall"
-                        className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-bg hover:opacity-90"
+                        className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-bg transition-opacity hover:opacity-90"
                       >
                         Top up
                       </Link>
@@ -641,7 +645,7 @@ function NoChatState({ hasKeys }: { hasKeys: boolean }) {
       {!hasKeys && (
         <Link
           href="/settings/keys"
-          className="mt-6 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg hover:opacity-90"
+          className="mt-6 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg transition-opacity hover:opacity-90"
         >
           Add an API key
         </Link>

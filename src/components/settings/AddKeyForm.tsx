@@ -102,7 +102,7 @@ export default function AddKeyForm() {
   return (
     <form
       onSubmit={onSubmit}
-      className="rounded-xl border border-line bg-surface p-5"
+      className="mm-fade-in rounded-xl border border-line bg-surface p-5"
     >
       <div className="flex items-center gap-2">
         <KeyRound size={16} className="text-ink-dim" aria-hidden />

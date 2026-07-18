@@ -388,53 +388,6 @@ export async function POST(request: Request) {
         }
         await supabase.from("chats").update(patch).eq("id", chatId).eq("user_id", userId);
 
-        // ---- Contextual summary (normal completion only) ----
-        if (!stopped) {
-          try {
-            const recent = history
-              .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
-              .slice(-6)
-              .map((m) => `${m.role}: ${(m.content ?? "").slice(0, 800)}`)
-              .join("\n\n");
-            const summaryResult = await chatCompletion({
-              provider: key.provider,
-              baseUrl: key.base_url,
-              apiKey,
-              model: chat.model,
-              maxTokens: 200,
-              thinking: false, // don't let thinking eat the tiny output budget
-              messages: [
-                {
-                  role: "system",
-                  content:
-                    "Summarize this conversation's context in 1-2 short sentences (topic, current state). No preamble.",
-                },
-                {
-                  role: "user",
-                  content: `${recent}\n\nassistant: ${finalText.slice(0, 800)}`,
-                },
-              ],
-            });
-            // Fold summary usage into the run before recomputing cost.
-            usage.inputTokens += summaryResult.usage.inputTokens;
-            usage.outputTokens += summaryResult.usage.outputTokens;
-            usage.cachedTokens += summaryResult.usage.cachedTokens;
-            cost = calcCost(chat.model, usage, rates);
-
-            const summary = (summaryResult.content ?? "").trim();
-            if (summary) {
-              await supabase
-                .from("chats")
-                .update({ summary })
-                .eq("id", chatId)
-                .eq("user_id", userId);
-              send({ type: "summary", summary });
-            }
-          } catch {
-            // Summary is best-effort; never fail the run.
-          }
-        }
-
         // ---- Charge post-hoc based on what the run actually did ----
         const creditsUsed = TASK_CREDITS[kind];
         // Fallback: if the charge fails, report the true balance rather than 0.

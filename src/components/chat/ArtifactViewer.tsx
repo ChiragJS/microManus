@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, ChevronsRight, Download, FileText } from "lucide-react";
 import type { Artifact } from "@/lib/types";
 import { Markdown } from "./markdown";
@@ -13,21 +13,39 @@ export default function ArtifactViewer({
   artifact: Artifact;
   onClose: () => void;
 }) {
+  const [closing, setClosing] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Play the slide-out before the parent unmounts the panel.
+  function requestClose() {
+    if (closing) return;
+    setClosing(true);
+    timer.current = setTimeout(onClose, 190);
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (timer.current) clearTimeout(timer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <aside className="flex h-full w-[45%] min-w-[360px] shrink-0 flex-col border-l border-line bg-bg">
+    <aside
+      className={`flex h-full w-[45%] min-w-[360px] shrink-0 flex-col border-l border-line bg-bg ${
+        closing ? "mm-panel-out" : "mm-panel-in"
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
         <button
           type="button"
-          onClick={onClose}
+          onClick={requestClose}
           aria-label="Close panel"
           className="flex h-7 w-7 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
         >
@@ -35,7 +53,7 @@ export default function ArtifactViewer({
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={requestClose}
           aria-label="Collapse panel"
           className="flex h-7 w-7 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
         >

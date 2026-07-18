@@ -56,7 +56,7 @@ export default function KeyList({ keys }: { keys: SafeKey[] }) {
         return (
           <div
             key={k.id}
-            className="flex items-center gap-4 rounded-xl border border-line bg-surface px-5 py-4"
+            className="mm-fade-in flex items-center gap-4 rounded-xl border border-line bg-surface px-5 py-4"
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2">

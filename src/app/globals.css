@@ -116,3 +116,139 @@ body {
 .mm-pop-in {
   animation: mm-pop-in 0.14s ease both;
 }
+
+/* Payment result: check/x pop */
+@keyframes mm-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mm-scale-in {
+  animation: mm-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---- Additive: cohesive UI transitions (polish pass) ---- */
+
+/* Appended chat messages: fade + rise. Initial history is NOT animated —
+   only bubbles mounted after hydration (live user + streaming assistant). */
+@keyframes mm-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-msg-in {
+  animation: mm-msg-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Artifact viewer panel: slide in from the right, slide back out on close. */
+@keyframes mm-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mm-panel-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.mm-panel-in {
+  animation: mm-panel-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mm-panel-out {
+  animation: mm-panel-out 0.2s ease-in both;
+}
+
+/* Generic soft fade — button swaps, settings cards, expanding forms. */
+@keyframes mm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mm-fade-in {
+  animation: mm-fade-in 0.18s ease both;
+}
+
+/* Thinking ticker: previous snippet settles to a dim rest state. */
+@keyframes mm-ticker-dim {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+
+.mm-ticker-prev {
+  animation: mm-ticker-dim 0.3s ease both;
+}
+
+/* Sidebar width animation — applied only when NOT dragging so the handle
+   tracks the cursor 1:1 during a resize. */
+.mm-anim-width {
+  transition: width 0.2s ease-out;
+}
+
+/* Expand/collapse via grid-template-rows (0fr -> 1fr) — no height jank. */
+.mm-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease-out;
+}
+
+.mm-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.mm-collapse > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-scale-in,
+  .mm-pop-in,
+  .mm-ticker-in,
+  .mm-msg-in,
+  .mm-panel-in,
+  .mm-panel-out,
+  .mm-fade-in,
+  .mm-ticker-prev {
+    animation: none;
+  }
+  .mm-anim-width,
+  .mm-collapse {
+    transition: none;
+  }
+}

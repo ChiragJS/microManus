@@ -23,9 +23,10 @@ export default async function PaywallPage({
   // Middleware protects /paywall, but guard defensively.
   if (!user) redirect("/login?next=/paywall");
 
-  // Returning from Stripe: confirm + credit server-side, then land straight on
-  // /chat — the user should never see the paywall again after paying.
-  // (Idempotent with the webhook; whichever runs first wins.)
+  // Returning from Stripe: confirm + credit server-side, then show a clear
+  // success / failed screen (client auto-continues to /chat on success).
+  // Idempotent with the webhook; whichever runs first wins.
+  let paymentResult: "success" | "failed" | null = null;
   if (params.success === "1" && params.session_id) {
     try {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
@@ -40,12 +41,13 @@ export default async function PaywallPage({
           stripeCustomerId:
             typeof session.customer === "string" ? session.customer : null,
         });
-        redirect("/chat");
+        paymentResult = "success";
+      } else {
+        paymentResult = "failed";
       }
-    } catch (err) {
-      // Next's redirect() throws internally — always rethrow it.
-      if (err && typeof err === "object" && "digest" in err) throw err;
-      // Stripe/network hiccup: fall through to the client confirm/poll flow.
+    } catch {
+      // Stripe/network hiccup: let the client confirm/poll flow decide.
+      paymentResult = null;
     }
   }
 
@@ -64,6 +66,7 @@ export default async function PaywallPage({
       success={params.success === "1"}
       sessionId={params.session_id ?? null}
       canceled={params.canceled === "1"}
+      paymentResult={paymentResult}
     />
   );
 }

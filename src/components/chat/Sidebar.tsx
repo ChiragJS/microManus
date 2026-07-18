@@ -62,7 +62,6 @@ export default function Sidebar({
   apiKeys,
   credits,
   creating,
-  summary,
   onCreateChat,
   onDeleteChat,
 }: {
@@ -71,7 +70,6 @@ export default function Sidebar({
   apiKeys: ApiKeyRow[];
   credits: number;
   creating: boolean;
-  summary: string | null;
   onCreateChat: (apiKeyId: string) => void;
   onDeleteChat: (id: string) => void;
 }) {
@@ -173,35 +171,37 @@ export default function Sidebar({
     return (
       <aside
         style={{ width: asideWidth }}
-        className="relative flex h-full shrink-0 flex-col items-center gap-3 border-r border-line bg-surface py-4"
+        className="mm-anim-width relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
       >
-        <LogoMark size={24} />
-        <button
-          type="button"
-          onClick={handleNewClick}
-          disabled={!hasKeys || creating}
-          aria-label="New research"
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          <Plus size={18} />
-        </button>
-        <Link
-          href="/paywall"
-          aria-label={`${credits} credits`}
-          className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1 text-ink-dim transition-colors hover:text-ink"
-        >
-          <CreditCard size={16} />
-          <span className="font-mono text-[0.6rem] text-ink">{credits}</span>
-        </Link>
-        <div className="mt-auto">
+        <div className="mm-fade-in flex h-full flex-col items-center gap-3 py-4">
+          <LogoMark size={24} />
           <button
             type="button"
-            onClick={toggleCollapsed}
-            aria-label="Expand sidebar"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
+            onClick={handleNewClick}
+            disabled={!hasKeys || creating}
+            aria-label="New research"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            <PanelLeftOpen size={18} />
+            <Plus size={18} />
           </button>
+          <Link
+            href="/paywall"
+            aria-label={`${credits} credits`}
+            className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1 text-ink-dim transition-colors hover:text-ink"
+          >
+            <CreditCard size={16} />
+            <span className="font-mono text-[0.6rem] text-ink">{credits}</span>
+          </Link>
+          <div className="mt-auto">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Expand sidebar"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          </div>
         </div>
       </aside>
     );
@@ -211,7 +211,9 @@ export default function Sidebar({
   return (
     <aside
       style={{ width: asideWidth }}
-      className="relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
+      className={`relative flex h-full shrink-0 flex-col border-r border-line bg-surface ${
+        dragging ? "" : "mm-anim-width"
+      }`}
     >
       {/* Resize handle */}
       <div
@@ -225,6 +227,7 @@ export default function Sidebar({
         }`}
       />
 
+      <div className="mm-fade-in flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2">
           <LogoMark size={20} />
@@ -267,7 +270,7 @@ export default function Sidebar({
         )}
 
         {pickerOpen && apiKeys.length > 1 && (
-          <div className="absolute right-3 left-3 top-full z-10 mt-1 overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xl">
+          <div className="mm-pop-in absolute right-3 left-3 top-full z-10 mt-1 overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xl">
             {apiKeys.map((k) => (
               <button
                 key={k.id}
@@ -321,16 +324,6 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* Contextual summary */}
-      {summary && activeChatId && (
-        <div className="border-t border-line px-4 py-3">
-          <p className="mb-1 text-[10px] font-medium tracking-wide text-ink-dim uppercase">
-            Context
-          </p>
-          <p className="line-clamp-4 text-[13px] leading-relaxed text-ink-dim">{summary}</p>
-        </div>
-      )}
-
       {/* Footer */}
       <div className="border-t border-line px-3 py-3">
         <Link
@@ -367,6 +360,7 @@ export default function Sidebar({
             Sign out
           </button>
         </div>
+      </div>
       </div>
     </aside>
   );

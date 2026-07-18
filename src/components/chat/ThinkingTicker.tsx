@@ -22,7 +22,7 @@ export default function ThinkingTicker({ snippets }: { snippets: string[] }) {
         {previous && (
           <p
             key={`prev-${previous}`}
-            className="truncate text-xs leading-relaxed text-ink-dim opacity-40"
+            className="mm-ticker-prev truncate text-xs leading-relaxed text-ink-dim"
           >
             {previous}
           </p>

@@ -98,33 +98,35 @@ export default function AgentTrace({
         <span className="font-mono tracking-tight">{summaryLabel}</span>
       </button>
 
-      {(open || live) && (
-        <ol className="mt-2 space-y-1.5 border-l border-line pl-3">
-          {steps.map((step, i) => {
-            if (step.type === "thinking") {
-              // While live, thinking is shown by the ticker — skip here.
-              if (live) return null;
-              return <ThinkingRow key={i} step={step} />;
-            }
-            if (step.type !== "tool_call") return null;
-            const isLast = i === steps.length - 1;
-            const inflight = live && isLast && lastIsUnresolved;
-            const Icon = toolIcon(step.tool);
-            return (
-              <li key={i} className="flex items-start gap-2 text-xs text-ink-dim">
-                <Icon
-                  size={13}
-                  className={`mt-0.5 shrink-0 ${inflight ? "text-accent" : "text-ink-dim"}`}
-                />
-                <span className={inflight ? "animate-pulse text-ink" : ""}>
-                  <span className="text-ink-dim">{verb(step.tool)}: </span>
-                  {truncate(step.summary ?? "")}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
+      <div className="mm-collapse" data-open={open || live ? "true" : "false"}>
+        <div>
+          <ol className="mt-2 space-y-1.5 border-l border-line pl-3">
+            {steps.map((step, i) => {
+              if (step.type === "thinking") {
+                // While live, thinking is shown by the ticker — skip here.
+                if (live) return null;
+                return <ThinkingRow key={i} step={step} />;
+              }
+              if (step.type !== "tool_call") return null;
+              const isLast = i === steps.length - 1;
+              const inflight = live && isLast && lastIsUnresolved;
+              const Icon = toolIcon(step.tool);
+              return (
+                <li key={i} className="flex items-start gap-2 text-xs text-ink-dim">
+                  <Icon
+                    size={13}
+                    className={`mt-0.5 shrink-0 ${inflight ? "text-accent" : "text-ink-dim"}`}
+                  />
+                  <span className={inflight ? "animate-pulse text-ink" : ""}>
+                    <span className="text-ink-dim">{verb(step.tool)}: </span>
+                    {truncate(step.summary ?? "")}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </div>
     </div>
   );
 }
