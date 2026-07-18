@@ -71,9 +71,11 @@ create table if not exists public.chats (
   api_key_id uuid references public.api_keys(id) on delete set null,
   provider text not null,
   model text not null,
+  summary text,            -- rolling 1-2 sentence context summary for the side panel
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.chats add column if not exists summary text;
 
 alter table public.chats enable row level security;
 create policy "chats_all_own" on public.chats
@@ -101,6 +103,27 @@ create index if not exists messages_chat_id_idx on public.messages(chat_id, crea
 
 alter table public.messages enable row level security;
 create policy "messages_all_own" on public.messages
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ============ agent_runs (live run state for background/resume UX) ============
+create table if not exists public.agent_runs (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid not null references public.chats(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'running' check (status in ('running', 'done', 'error', 'stopped')),
+  task_kind text check (task_kind in ('chat', 'research', 'report')),
+  steps jsonb,
+  thinking text,           -- latest thinking snippet for the ticker
+  content text,            -- partial/final answer text
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists agent_runs_chat_idx on public.agent_runs(chat_id, created_at desc);
+
+alter table public.agent_runs enable row level security;
+create policy "agent_runs_all_own" on public.agent_runs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ============ credit_events (audit) ============
@@ -156,7 +179,34 @@ begin
 end;
 $$;
 
+-- Consume N credits post-hoc for a finished run (tiered: chat=0, research=1, report=2).
+-- Clamps at 0 (a run may finish with fewer credits left than its price; small
+-- overdraft is absorbed). Returns remaining credits, or -1 if not authenticated/locked.
+create or replace function public.consume_credits(p_amount integer, p_reason text default 'agent_run')
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  old_credits integer;
+  new_credits integer;
+begin
+  if uid is null or p_amount < 0 then return -1; end if;
+  select credits into old_credits from public.profiles
+    where id = uid and unlocked = true for update;
+  if old_credits is null then return -1; end if;
+  if p_amount = 0 then return old_credits; end if;
+  new_credits := greatest(old_credits - p_amount, 0);
+  update public.profiles set credits = new_credits, updated_at = now() where id = uid;
+  insert into public.credit_events (user_id, delta, reason)
+    values (uid, new_credits - old_credits, p_reason);
+  return new_credits;
+end;
+$$;
+
 -- Consume one credit atomically for an agent run. Returns remaining credits or -1 if insufficient.
+-- (Legacy — kept for compatibility; the chat route now charges post-hoc via consume_credits.)
 create or replace function public.consume_credit()
 returns integer
 language plpgsql

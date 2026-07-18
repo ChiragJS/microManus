@@ -1,0 +1,62 @@
+<svg width="512" height="512" viewBox="0 0 512 512"
+     xmlns="http://www.w3.org/2000/svg">
+
+    <!-- Background -->
+    <rect width="512" height="512" rx="96" fill="#13151C"/>
+
+    <!-- Outer Compass Ring -->
+    <circle
+        cx="256"
+        cy="256"
+        r="150"
+        fill="none"
+        stroke="#E8703A"
+        stroke-width="10"
+        opacity="0.9"/>
+
+    <!-- Neural Network Connections -->
+    <line x1="256" y1="106" x2="166" y2="196"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <line x1="256" y1="106" x2="346" y2="196"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <line x1="166" y1="196" x2="106" y2="316"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <line x1="346" y1="196" x2="406" y2="316"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <line x1="106" y1="316" x2="256" y2="406"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <line x1="406" y1="316" x2="256" y2="406"
+          stroke="#E8703A" stroke-width="6"/>
+
+    <!-- Neural Nodes -->
+    <circle cx="256" cy="106" r="14" fill="#E8E6E1"/>
+    <circle cx="166" cy="196" r="12" fill="#E8703A"/>
+    <circle cx="346" cy="196" r="12" fill="#E8703A"/>
+    <circle cx="106" cy="316" r="12" fill="#E8E6E1"/>
+    <circle cx="406" cy="316" r="12" fill="#E8E6E1"/>
+    <circle cx="256" cy="406" r="14" fill="#E8703A"/>
+
+    <!-- Compass Needle -->
+    <polygon
+        points="256,145 300,256 256,230 212,256"
+        fill="#E8E6E1"/>
+
+    <polygon
+        points="256,367 212,256 256,282 300,256"
+        fill="#E8703A"/>
+
+    <!-- Center Hub -->
+    <circle
+        cx="256"
+        cy="256"
+        r="18"
+        fill="#E8E6E1"
+        stroke="#E8703A"
+        stroke-width="4"/>
+
+</svg>
