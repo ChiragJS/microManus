@@ -5,9 +5,9 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   useSyncExternalStore,
 } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
 import type {
@@ -178,7 +178,7 @@ export default function ChatWorkspace({
   chats: initialChats,
   apiKeys,
   credits: initialCredits,
-  activeChat,
+  activeChat: initialActiveChat,
   initialMessages,
 }: {
   chats: Chat[];
@@ -187,21 +187,45 @@ export default function ChatWorkspace({
   activeChat: Chat | null;
   initialMessages: MessageRow[];
 }) {
-  const router = useRouter();
-  const chatId = activeChat?.id ?? null;
+  // Chat switching is fully client-side: pushState + cached messages. A full
+  // server navigation per thread click costs an auth roundtrip + remount and
+  // is what made switching slow/jittery.
+  const [activeChatId, setActiveChatId] = useState<string | null>(
+    initialActiveChat?.id ?? null
+  );
+  const chatId = activeChatId;
 
   const [chats, setChats] = useState<Chat[]>(initialChats);
   const [credits, setCredits] = useState(initialCredits);
   const [persisted, setPersisted] = useState<DisplayMessage[]>(
     initialMessages.map(fromRow)
   );
+  const [chatLoading, setChatLoading] = useState(false);
   const [input, setInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openArtifactPath, setOpenArtifactPath] = useState<string | null>(null);
 
+  const activeChat = useMemo(
+    () =>
+      chats.find((c) => c.id === activeChatId) ??
+      (initialActiveChat?.id === activeChatId ? initialActiveChat : null),
+    [chats, activeChatId, initialActiveChat]
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeIdRef = useRef<string | null>(activeChatId);
+  activeIdRef.current = activeChatId;
+
+  // Per-chat message cache — render instantly on revisit, revalidate behind.
+  const cacheRef = useRef<Map<string, DisplayMessage[]> | null>(null);
+  if (cacheRef.current === null) {
+    cacheRef.current = new Map();
+    if (initialActiveChat) {
+      cacheRef.current.set(initialActiveChat.id, initialMessages.map(fromRow));
+    }
+  }
 
   // --- Subscribe to the live run for the active chat ---
   const liveRun = useSyncExternalStore(
@@ -217,35 +241,40 @@ export default function ChatWorkspace({
     }
   }, []);
 
+  const loadMessages = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/chats/${id}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      const rows: MessageRow[] = Array.isArray(data?.messages)
+        ? data.messages
+        : Array.isArray(data)
+          ? data
+          : (data?.chat?.messages ?? []);
+      const msgs = rows
+        .filter((r) => r.role === "user" || r.role === "assistant")
+        .map(fromRow);
+      cacheRef.current?.set(id, msgs);
+      if (activeIdRef.current === id) setPersisted(msgs);
+      const chat: Chat | undefined = data?.chat;
+      if (chat?.title) {
+        setChats((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, title: chat.title } : c))
+        );
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const finalizeActive = useCallback(
     async (id: string) => {
       stopPolling();
-      try {
-        const res = await fetch(`/api/chats/${id}`);
-        if (res.ok) {
-          const data = await res.json();
-          const rows: MessageRow[] = Array.isArray(data?.messages)
-            ? data.messages
-            : Array.isArray(data)
-              ? data
-              : (data?.chat?.messages ?? []);
-          const msgs = rows
-            .filter((r) => r.role === "user" || r.role === "assistant")
-            .map(fromRow);
-          setPersisted(msgs);
-          const chat: Chat | undefined = data?.chat;
-          if (chat?.title) {
-            setChats((prev) =>
-              prev.map((c) => (c.id === id ? { ...c, title: chat.title } : c))
-            );
-          }
-        }
-      } catch {
-        /* keep the live bubble if reload fails */
-      }
+      await loadMessages(id); // on failure, keep the live bubble
       setLiveRun(id, undefined);
     },
-    [stopPolling]
+    [stopPolling, loadMessages]
   );
 
   const startPolling = useCallback(
@@ -274,14 +303,44 @@ export default function ChatWorkspace({
     [stopPolling, finalizeActive]
   );
 
-  // --- Reset per-chat view state when the active thread changes ---
+  // --- Client-side thread switching ---
+  const switchChat = useCallback((id: string) => {
+    if (activeIdRef.current === id) return;
+    setActiveChatId(id);
+    window.history.pushState({ chatId: id }, "", `/chat/${id}`);
+  }, []);
+
+  // Back/forward buttons re-sync from the URL.
   useEffect(() => {
-    setPersisted(initialMessages.map(fromRow));
-    setCredits(initialCredits);
+    function onPop() {
+      const m = window.location.pathname.match(/^\/chat\/([0-9a-f-]{36})/i);
+      setActiveChatId(m ? m[1] : null);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // On thread change: render from cache instantly, revalidate in background.
+  useEffect(() => {
     setOpenArtifactPath(null);
     setError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId]);
+    if (!chatId) {
+      setPersisted([]);
+      return;
+    }
+    const cached = cacheRef.current?.get(chatId);
+    setPersisted(cached ?? []);
+    if (cached === undefined) {
+      // Cache miss — show a lightweight loading state, not the examples.
+      setChatLoading(true);
+      loadMessages(chatId).finally(() => {
+        if (activeIdRef.current === chatId) setChatLoading(false);
+      });
+    } else {
+      // Stale-while-revalidate.
+      loadMessages(chatId);
+    }
+  }, [chatId, loadMessages]);
 
   // --- On mount / chat switch: attach to any background run via polling ---
   useEffect(() => {
@@ -350,7 +409,9 @@ export default function ChatWorkspace({
   }, [liveArtifactCount]);
 
   // --- Merge persisted + live bubbles for rendering ---
-  const messages: DisplayMessage[] = (() => {
+  // Memoized so unrelated re-renders (typing in the composer) don't rebuild
+  // the array and cascade into re-rendering/re-parsing every message.
+  const messages: DisplayMessage[] = useMemo(() => {
     const base = [...persisted];
     if (liveRun) {
       const last = base[base.length - 1];
@@ -373,7 +434,7 @@ export default function ChatWorkspace({
       base.push(liveRun.assistant);
     }
     return base;
-  })();
+  }, [persisted, liveRun]);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -384,8 +445,11 @@ export default function ChatWorkspace({
   }, [messages, scrollToBottom]);
 
   // --- Conversation-level artifacts + sources for the right rail ---
-  const allArtifacts: Artifact[] = messages.flatMap((m) => m.artifacts);
-  const allSources: Source[] = (() => {
+  const allArtifacts: Artifact[] = useMemo(
+    () => messages.flatMap((m) => m.artifacts),
+    [messages]
+  );
+  const allSources: Source[] = useMemo(() => {
     const byHref = new Map<string, Source>();
     for (const m of messages) {
       if (m.role !== "assistant") continue;
@@ -394,7 +458,7 @@ export default function ChatWorkspace({
       }
     }
     return [...byHref.values()];
-  })();
+  }, [messages]);
 
   const openArtifact =
     openArtifactPath != null
@@ -411,41 +475,54 @@ export default function ChatWorkspace({
 
   /* ------------------------------ actions ------------------------------ */
 
-  async function createChat(apiKeyId: string) {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const res = await fetch("/api/chats", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKeyId }),
-      });
-      const data = await res.json();
-      if (res.ok && data.chat) {
-        router.push(`/chat/${data.chat.id}`);
-      } else {
-        setError(data.error ?? "Failed to create research");
+  const createChat = useCallback(
+    async (apiKeyId: string) => {
+      if (creating) return;
+      setCreating(true);
+      try {
+        const res = await fetch("/api/chats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKeyId }),
+        });
+        const data = await res.json();
+        if (res.ok && data.chat) {
+          const chat: Chat = data.chat;
+          cacheRef.current?.set(chat.id, []);
+          setChats((prev) => [chat, ...prev.filter((c) => c.id !== chat.id)]);
+          switchChat(chat.id);
+        } else {
+          setError(data.error ?? "Failed to create research");
+        }
+      } catch {
+        setError("Failed to create research");
+      } finally {
         setCreating(false);
       }
-    } catch {
-      setError("Failed to create research");
-      setCreating(false);
-    }
-  }
+    },
+    [creating, switchChat]
+  );
 
-  async function deleteChat(id: string) {
-    setChats((prev) => prev.filter((c) => c.id !== id));
-    setLiveRun(id, undefined);
-    try {
-      await fetch(`/api/chats/${id}`, { method: "DELETE" });
-    } catch {
-      /* best-effort */
-    }
-    if (chatId === id) {
-      router.push("/chat");
-      router.refresh();
-    }
-  }
+  const deleteChat = useCallback(
+    (id: string) => {
+      setLiveRun(id, undefined);
+      cacheRef.current?.delete(id);
+      const remaining = chats.filter((c) => c.id !== id);
+      setChats(remaining);
+      if (activeIdRef.current === id) {
+        const next = remaining[0];
+        if (next) switchChat(next.id);
+        else {
+          setActiveChatId(null);
+          window.history.pushState({}, "", "/chat");
+        }
+      }
+      fetch(`/api/chats/${id}`, { method: "DELETE" }).catch(() => {
+        /* best-effort */
+      });
+    },
+    [chats, switchChat]
+  );
 
   function send() {
     const text = input.trim();
@@ -527,9 +604,15 @@ export default function ChatWorkspace({
     });
   }
 
+  const openArtifactCb = useCallback(
+    (a: Artifact) => setOpenArtifactPath(a.path),
+    []
+  );
+  const closeArtifact = useCallback(() => setOpenArtifactPath(null), []);
+
   const streaming = !!liveRun?.streaming;
   const stopping = !!liveRun?.stopping;
-  const showExamples = activeChat && messages.length === 0;
+  const showExamples = activeChat && messages.length === 0 && !chatLoading;
   const showRail = !openArtifact && (allArtifacts.length > 0 || allSources.length > 0);
 
   return (
@@ -542,6 +625,7 @@ export default function ChatWorkspace({
         creating={creating}
         onCreateChat={createChat}
         onDeleteChat={deleteChat}
+        onSelectChat={switchChat}
       />
 
       <main className="flex min-w-0 flex-1">
@@ -562,7 +646,7 @@ export default function ChatWorkspace({
                           message={m}
                           animate={liveIds.has(m.id)}
                           openArtifactPath={openArtifactPath}
-                          onOpenArtifact={(a) => setOpenArtifactPath(a.path)}
+                          onOpenArtifact={openArtifactCb}
                         />
                       ))}
                     </div>
@@ -571,7 +655,7 @@ export default function ChatWorkspace({
                         <RightRail
                           artifacts={allArtifacts}
                           sources={allSources}
-                          onOpenArtifact={(a) => setOpenArtifactPath(a.path)}
+                          onOpenArtifact={openArtifactCb}
                         />
                       </div>
                     )}
@@ -616,10 +700,7 @@ export default function ChatWorkspace({
             </div>
 
             {openArtifact && (
-              <ArtifactViewer
-                artifact={openArtifact}
-                onClose={() => setOpenArtifactPath(null)}
-              />
+              <ArtifactViewer artifact={openArtifact} onClose={closeArtifact} />
             )}
           </>
         )}

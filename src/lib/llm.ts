@@ -92,7 +92,12 @@ async function openaiCompletion(req: LlmRequest): Promise<LlmResult> {
       function: { name: t.name, description: t.description, parameters: t.parameters },
     }));
   }
-  if (req.maxTokens) body.max_completion_tokens = req.maxTokens;
+  if (req.maxTokens) {
+    // OpenAI deprecated max_tokens in favor of max_completion_tokens; other
+    // OpenAI-compatible providers (Kimi/Moonshot, custom) still expect max_tokens.
+    if (req.provider === "openai") body.max_completion_tokens = req.maxTokens;
+    else body.max_tokens = req.maxTokens;
+  }
 
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",

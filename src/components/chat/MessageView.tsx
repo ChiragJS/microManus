@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, Download } from "lucide-react";
@@ -28,7 +28,7 @@ function creditLabel(n: number): string {
   return `${n} credit${n === 1 ? "" : "s"}`;
 }
 
-export default function MessageView({
+function MessageView({
   message,
   animate = false,
   openArtifactPath,
@@ -167,3 +167,7 @@ export default function MessageView({
     </div>
   );
 }
+
+// Memoized: markdown parsing is expensive; only re-render when this
+// message's props actually change (not on every keystroke/SSE tick).
+export default memo(MessageView);

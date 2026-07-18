@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { memo, useState, useRef, useEffect } from "react";
 import { FileText, Download, ChevronRight, Layers, Link2 } from "lucide-react";
 import type { Artifact } from "@/lib/types";
 import { type Source, SourceRow } from "./markdown";
 
 /** Conversation-level Artifacts / Sources summary cards (wide screens only). */
-export default function RightRail({
+function RightRail({
   artifacts,
   sources,
   onOpenArtifact,
@@ -108,3 +108,5 @@ export default function RightRail({
     </div>
   );
 }
+
+export default memo(RightRail);

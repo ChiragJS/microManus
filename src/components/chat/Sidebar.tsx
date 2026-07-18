@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useCallback,
+  memo,
 } from "react";
 import Link from "next/link";
 import {
@@ -56,7 +57,7 @@ function keyLabel(key: ApiKeyRow): string {
   return key.label ? `${key.label} · ${modelName}` : `${modelName} · ${providerName}`;
 }
 
-export default function Sidebar({
+function Sidebar({
   chats,
   activeChatId,
   apiKeys,
@@ -64,6 +65,7 @@ export default function Sidebar({
   creating,
   onCreateChat,
   onDeleteChat,
+  onSelectChat,
 }: {
   chats: Chat[];
   activeChatId: string | null;
@@ -72,6 +74,7 @@ export default function Sidebar({
   creating: boolean;
   onCreateChat: (apiKeyId: string) => void;
   onDeleteChat: (id: string) => void;
+  onSelectChat: (id: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -298,8 +301,13 @@ export default function Sidebar({
               const active = chat.id === activeChatId;
               return (
                 <li key={chat.id} className="group relative">
-                  <Link
+                  <a
                     href={`/chat/${chat.id}`}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                      e.preventDefault();
+                      onSelectChat(chat.id);
+                    }}
                     className={`block rounded-lg px-2.5 py-2 pr-8 transition-colors ${
                       active ? "bg-surface-2" : "hover:bg-surface-2/60"
                     }`}
@@ -308,7 +316,7 @@ export default function Sidebar({
                     <span className="block font-mono text-[0.65rem] text-ink-dim">
                       {relativeTime(chat.updated_at)}
                     </span>
-                  </Link>
+                  </a>
                   <button
                     type="button"
                     onClick={() => onDeleteChat(chat.id)}
@@ -365,3 +373,6 @@ export default function Sidebar({
     </aside>
   );
 }
+
+// Memoized: typing in the composer must not re-render the thread list.
+export default memo(Sidebar);
