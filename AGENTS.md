@@ -23,7 +23,7 @@ Deep research AI agent web app with usage-based billing. Next.js 15 (App Router,
 - LLM client: `src/lib/llm.ts` — `chatCompletion()` normalizes OpenAI-compat and Anthropic-native (with prompt caching); returns `{content, toolCalls, usage, stopReason}`
 - API key encryption: `src/lib/crypto.ts` (encrypt/decrypt/maskKey, AES-256-GCM via APP_ENCRYPTION_SECRET)
 - Supabase clients: `src/lib/supabase/{client,server,admin}.ts`
-- Auth middleware: `src/middleware.ts` (protects /chat /settings /usage /paywall; redirects logged-in users away from / and /login)
+- Auth proxy (middleware): `src/proxy.ts` (protects /chat /settings /usage /paywall; redirects logged-in users away from / and /login)
 - Env vars: `.env.example`
 
 ## Design

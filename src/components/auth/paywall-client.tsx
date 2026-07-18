@@ -150,6 +150,11 @@ export function PaywallClient({
     setPayError(null);
     try {
       const res = await fetch("/api/checkout", { method: "POST" });
+      if (res.status === 401) {
+        // Session expired — re-authenticate and come back.
+        window.location.href = "/login?next=/paywall";
+        return;
+      }
       const data = await res.json();
       if (data?.clientSecret) {
         setCheckoutSecret(data.clientSecret);
