@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CreditCard,
@@ -8,9 +8,19 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  X,
 } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  EmbeddedCheckoutProvider,
+  EmbeddedCheckout,
+} from "@stripe/react-stripe-js";
 import { createClient } from "@/lib/supabase/client";
 import { Wordmark } from "@/components/wordmark";
+
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""
+);
 
 type MeResponse = {
   credits: number;
@@ -51,6 +61,8 @@ export function PaywallClient({
   // checkout state
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  /** Stripe embedded-checkout client secret — non-null renders the modal */
+  const [checkoutSecret, setCheckoutSecret] = useState<string | null>(null);
 
   // payment-return state
   const [confirming, setConfirming] = useState(success && Boolean(sessionId));
@@ -139,17 +151,29 @@ export function PaywallClient({
     try {
       const res = await fetch("/api/checkout", { method: "POST" });
       const data = await res.json();
-      if (data?.url) {
-        window.location.href = data.url;
+      if (data?.clientSecret) {
+        setCheckoutSecret(data.clientSecret);
       } else {
         setPayError("Could not start checkout. Try again.");
-        setPayLoading(false);
       }
     } catch {
       setPayError("Network error. Try again.");
+    } finally {
       setPayLoading(false);
     }
   }
+
+  const closeCheckout = useCallback(() => setCheckoutSecret(null), []);
+
+  // Esc closes the checkout modal
+  useEffect(() => {
+    if (!checkoutSecret) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") closeCheckout();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [checkoutSecret, closeCheckout]);
 
   async function signOut() {
     const supabase = createClient();
@@ -184,6 +208,41 @@ export function PaywallClient({
 
   return (
     <Shell>
+      {/* Embedded Stripe Checkout modal */}
+      {checkoutSecret && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 backdrop-blur-sm"
+          onClick={closeCheckout}
+        >
+          <div
+            className="relative mx-4 w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <span className="text-sm font-medium text-ink">
+                MicroManus — 5 research credits · $5
+              </span>
+              <button
+                type="button"
+                onClick={closeCheckout}
+                aria-label="Close checkout"
+                className="rounded-md p-1.5 text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="max-h-[75vh] overflow-y-auto bg-white">
+              <EmbeddedCheckoutProvider
+                stripe={stripePromise}
+                options={{ clientSecret: checkoutSecret }}
+              >
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 text-center">
         <div className="mb-1 font-mono text-xs uppercase tracking-widest text-accent">
           {alreadyUnlocked ? "Top up" : "Paywall"}

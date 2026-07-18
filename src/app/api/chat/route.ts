@@ -434,16 +434,20 @@ export async function POST(request: Request) {
 
         // ---- Charge post-hoc based on what the run actually did ----
         const creditsUsed = TASK_CREDITS[kind];
-        let creditsRemaining = profile?.credits ?? 0;
+        // Fallback: if the charge fails, report the true balance rather than 0.
+        let creditsRemaining = Math.max((profile?.credits ?? 0) - creditsUsed, 0);
         try {
-          const { data: remaining } = await supabase.rpc("consume_credits", {
+          const { data: remaining, error: chargeErr } = await supabase.rpc("consume_credits", {
             p_amount: creditsUsed,
             p_reason: `agent_run:${kind}`,
           });
-          creditsRemaining =
-            typeof remaining === "number" ? (remaining === -1 ? 0 : remaining) : 0;
+          if (!chargeErr && typeof remaining === "number" && remaining !== -1) {
+            creditsRemaining = remaining;
+          } else if (chargeErr) {
+            console.error("consume_credits failed:", chargeErr.message);
+          }
         } catch {
-          creditsRemaining = 0;
+          // keep fallback value
         }
 
         send({
