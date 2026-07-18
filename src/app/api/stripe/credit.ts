@@ -3,9 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * Idempotently credit a user for a completed Stripe payment.
  *
- * Idempotency: a `credit_events` row with reason='payment' and
- * metadata->>session_id = sessionId marks the session as already credited.
- * We select-then-insert; a rare double-credit race is tolerated for this app.
+ * Delegates to the `grant_paid_credits` RPC (service-role only), which uses
+ * insert-first idempotency against a unique index on the checkout session id —
+ * concurrent webhook + confirm calls can never double-credit.
  */
 export async function creditPayment(params: {
   userId: string;
@@ -15,41 +15,13 @@ export async function creditPayment(params: {
   const { userId, sessionId, stripeCustomerId } = params;
   const admin = createAdminClient();
 
-  // Already credited for this checkout session?
-  const { data: existing } = await admin
-    .from("credit_events")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("reason", "payment")
-    .eq("metadata->>session_id", sessionId)
-    .maybeSingle();
-
-  const { data: prof } = await admin
-    .from("profiles")
-    .select("credits, unlock_method")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (existing) {
-    return { credited: false, credits: prof?.credits ?? null };
-  }
-
-  const newCredits = (prof?.credits ?? 0) + 5;
-  const update: Record<string, unknown> = {
-    credits: newCredits,
-    unlocked: true,
-    unlock_method: prof?.unlock_method ?? "payment",
-    updated_at: new Date().toISOString(),
-  };
-  if (stripeCustomerId) update.stripe_customer_id = stripeCustomerId;
-
-  await admin.from("profiles").update(update).eq("id", userId);
-  await admin.from("credit_events").insert({
-    user_id: userId,
-    delta: 5,
-    reason: "payment",
-    metadata: { session_id: sessionId },
+  const { data, error } = await admin.rpc("grant_paid_credits", {
+    p_user_id: userId,
+    p_session_id: sessionId,
+    p_customer_id: stripeCustomerId ?? null,
   });
+  if (error) throw new Error(`grant_paid_credits failed: ${error.message}`);
 
-  return { credited: true, credits: newCredits };
+  const result = data as { ok: boolean; already_credited: boolean; credits: number | null };
+  return { credited: !result.already_credited, credits: result.credits ?? null };
 }

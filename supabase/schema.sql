@@ -117,6 +117,11 @@ alter table public.credit_events enable row level security;
 create policy "credit_events_select_own" on public.credit_events
   for select using (auth.uid() = user_id);
 
+-- One credit grant per Stripe checkout session (true idempotency for webhook + confirm races)
+create unique index if not exists credit_events_payment_session_uidx
+  on public.credit_events ((metadata->>'session_id'))
+  where reason = 'payment';
+
 -- ============ RPCs ============
 
 -- Redeem coupon: one-time, unlocks + grants 5 credits
@@ -173,6 +178,65 @@ begin
   return remaining;
 end;
 $$;
+
+-- Grant 5 paid credits exactly once per Stripe checkout session (service-role only).
+-- Insert-first idempotency: the unique index above makes concurrent webhook/confirm
+-- calls collide on the insert, so only one caller applies the +5.
+create or replace function public.grant_paid_credits(
+  p_user_id uuid,
+  p_session_id text,
+  p_customer_id text default null
+)
+returns json
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_credits integer;
+begin
+  begin
+    insert into public.credit_events (user_id, delta, reason, metadata)
+    values (p_user_id, 5, 'payment', jsonb_build_object('session_id', p_session_id));
+  exception when unique_violation then
+    select credits into new_credits from public.profiles where id = p_user_id;
+    return json_build_object('ok', true, 'already_credited', true, 'credits', new_credits);
+  end;
+  update public.profiles
+    set credits = credits + 5,
+        unlocked = true,
+        unlock_method = coalesce(unlock_method, 'payment'),
+        stripe_customer_id = coalesce(p_customer_id, stripe_customer_id),
+        updated_at = now()
+    where id = p_user_id
+    returning credits into new_credits;
+  return json_build_object('ok', true, 'already_credited', false, 'credits', new_credits);
+end;
+$$;
+
+revoke execute on function public.grant_paid_credits(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.grant_paid_credits(uuid, text, text) to service_role;
+
+-- Refund one credit when an agent run fails before producing a result (service-role only).
+create or replace function public.refund_credit(p_user_id uuid)
+returns integer
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  new_credits integer;
+begin
+  update public.profiles
+    set credits = credits + 1, updated_at = now()
+    where id = p_user_id
+    returning credits into new_credits;
+  insert into public.credit_events (user_id, delta, reason)
+  values (p_user_id, 1, 'refund');
+  return new_credits;
+end;
+$$;
+
+revoke execute on function public.refund_credit(uuid) from public, anon, authenticated;
+grant execute on function public.refund_credit(uuid) to service_role;
 
 -- ============ storage ============
 -- Public bucket for generated PDF artifacts

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { decrypt } from "@/lib/crypto";
 import { chatCompletion, LlmError, type LlmMessage } from "@/lib/llm";
 import { calcCost, type TokenUsage } from "@/lib/pricing";
@@ -82,6 +83,9 @@ export async function POST(request: Request) {
         controller.close();
       };
 
+      let creditConsumed = false;
+      let runCompleted = false;
+
       try {
         // ---- Load chat + api key ----
         const { data: chat } = await supabase
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
         const { data: remaining, error: creditErr } = await supabase.rpc("consume_credit");
         if (creditErr) return fail("Failed to consume credit");
         if (remaining === -1) return fail("OUT_OF_CREDITS");
+        creditConsumed = true;
         const creditsRemaining = typeof remaining === "number" ? remaining : 0;
 
         // ---- Persist user message ----
@@ -260,6 +265,7 @@ export async function POST(request: Request) {
           })
           .select("id")
           .single();
+        runCompleted = true;
 
         // ---- Update chat: bump activity + maybe set title ----
         const patch: { updated_at: string; title?: string } = {
@@ -283,12 +289,21 @@ export async function POST(request: Request) {
         send({ type: "done", messageId: saved?.id });
         controller.close();
       } catch (err) {
-        const msg =
+        let msg =
           err instanceof LlmError
             ? err.message
             : err instanceof Error
               ? err.message
               : "Unexpected error";
+        // The run failed before producing an answer — give the credit back.
+        if (creditConsumed && !runCompleted) {
+          try {
+            await createAdminClient().rpc("refund_credit", { p_user_id: userId });
+            msg += " — your credit was refunded.";
+          } catch {
+            // refund is best-effort
+          }
+        }
         try {
           send({ type: "error", message: msg });
           send({ type: "done" });
