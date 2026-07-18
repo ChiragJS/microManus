@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -10,21 +16,35 @@ import {
   BarChart3,
   LogOut,
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getModel } from "@/lib/pricing";
 import type { Chat, ApiKeyRow } from "@/lib/types";
 import { relativeTime } from "./format";
 
-function Wordmark() {
+const WIDTH_KEY = "mm.sidebar.width";
+const COLLAPSED_KEY = "mm.sidebar.collapsed";
+const DEFAULT_WIDTH = 260;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 420;
+const RAIL_WIDTH = 56;
+
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function LogoMark({ size = 20 }: { size?: number }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="h-3.5 w-3.5 rounded-[3px] bg-accent" />
-      <span className="text-[0.95rem] font-semibold tracking-tight">
-        <span className="text-ink-dim">Micro</span>
-        <span className="text-ink">Manus</span>
-      </span>
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/microManusLogo.svg"
+      alt="MicroManus"
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
+      className="shrink-0 rounded-md"
+    />
   );
 }
 
@@ -42,6 +62,7 @@ export default function Sidebar({
   apiKeys,
   credits,
   creating,
+  summary,
   onCreateChat,
   onDeleteChat,
 }: {
@@ -50,12 +71,27 @@ export default function Sidebar({
   apiKeys: ApiKeyRow[];
   credits: number;
   creating: boolean;
+  summary: string | null;
   onCreateChat: (apiKeyId: string) => void;
   onDeleteChat: (id: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [collapsed, setCollapsed] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const hasKeys = apiKeys.length > 0;
+
+  // Restore persisted width/collapsed before first paint (client only).
+  useIsoLayoutEffect(() => {
+    try {
+      const w = Number(localStorage.getItem(WIDTH_KEY));
+      if (w >= MIN_WIDTH && w <= MAX_WIDTH) setWidth(w);
+      setCollapsed(localStorage.getItem(COLLAPSED_KEY) === "1");
+    } catch {
+      /* SSR / storage unavailable */
+    }
+  }, []);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -66,6 +102,54 @@ export default function Sidebar({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
+
+  const startDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    document.body.classList.add("mm-resizing");
+
+    function onMove(ev: MouseEvent) {
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, ev.clientX));
+      setWidth(next);
+    }
+    function onUp() {
+      setDragging(false);
+      document.body.classList.remove("mm-resizing");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      setWidth((w) => {
+        try {
+          localStorage.setItem(WIDTH_KEY, String(w));
+        } catch {
+          /* ignore */
+        }
+        return w;
+      });
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
+
+  function resetWidth() {
+    setWidth(DEFAULT_WIDTH);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(DEFAULT_WIDTH));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   async function signOut() {
     const supabase = createClient();
@@ -82,10 +166,81 @@ export default function Sidebar({
     setPickerOpen((v) => !v);
   }
 
+  const asideWidth = collapsed ? RAIL_WIDTH : width;
+
+  /* --------------------------- Collapsed rail --------------------------- */
+  if (collapsed) {
+    return (
+      <aside
+        style={{ width: asideWidth }}
+        className="relative flex h-full shrink-0 flex-col items-center gap-3 border-r border-line bg-surface py-4"
+      >
+        <LogoMark size={24} />
+        <button
+          type="button"
+          onClick={handleNewClick}
+          disabled={!hasKeys || creating}
+          aria-label="New research"
+          className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          <Plus size={18} />
+        </button>
+        <Link
+          href="/paywall"
+          aria-label={`${credits} credits`}
+          className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1 text-ink-dim transition-colors hover:text-ink"
+        >
+          <CreditCard size={16} />
+          <span className="font-mono text-[0.6rem] text-ink">{credits}</span>
+        </Link>
+        <div className="mt-auto">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label="Expand sidebar"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
+  /* ---------------------------- Full sidebar ---------------------------- */
   return (
-    <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-line bg-surface">
-      <div className="px-4 py-4">
-        <Wordmark />
+    <aside
+      style={{ width: asideWidth }}
+      className="relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
+    >
+      {/* Resize handle */}
+      <div
+        onMouseDown={startDrag}
+        onDoubleClick={resetWidth}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        className={`absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize transition-colors hover:bg-accent/40 ${
+          dragging ? "bg-accent/60" : "bg-transparent"
+        }`}
+      />
+
+      <div className="flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-2">
+          <LogoMark size={20} />
+          <span className="text-[0.95rem] font-semibold tracking-tight">
+            <span className="text-ink-dim">Micro</span>
+            <span className="text-ink">Manus</span>
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-label="Collapse sidebar"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-surface-2 hover:text-ink"
+        >
+          <PanelLeftClose size={16} />
+        </button>
       </div>
 
       {/* New research */}
@@ -112,7 +267,7 @@ export default function Sidebar({
         )}
 
         {pickerOpen && apiKeys.length > 1 && (
-          <div className="absolute left-3 right-3 top-full z-10 mt-1 overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xl">
+          <div className="absolute right-3 left-3 top-full z-10 mt-1 overflow-hidden rounded-lg border border-line bg-surface-2 shadow-xl">
             {apiKeys.map((k) => (
               <button
                 key={k.id}
@@ -165,6 +320,16 @@ export default function Sidebar({
           </ul>
         )}
       </nav>
+
+      {/* Contextual summary */}
+      {summary && activeChatId && (
+        <div className="border-t border-line px-4 py-3">
+          <p className="mb-1 text-[10px] font-medium tracking-wide text-ink-dim uppercase">
+            Context
+          </p>
+          <p className="line-clamp-4 text-[13px] leading-relaxed text-ink-dim">{summary}</p>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-line px-3 py-3">

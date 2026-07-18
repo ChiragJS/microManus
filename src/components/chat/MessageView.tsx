@@ -1,110 +1,48 @@
 "use client";
 
-import ReactMarkdown, { type Components } from "react-markdown";
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FileText, Download } from "lucide-react";
+import { Copy, Check, Download } from "lucide-react";
 import type { Artifact } from "@/lib/types";
+import { TASK_CREDITS } from "@/lib/types";
 import AgentTrace from "./AgentTrace";
-import { type DisplayMessage, fmtNum, fmtCost } from "./format";
+import TaskBadge from "./TaskBadge";
+import ThinkingTicker from "./ThinkingTicker";
+import DocumentCard from "./DocumentCard";
+import {
+  markdownComponents,
+  extractSources,
+  SourcesRow,
+} from "./markdown";
+import {
+  type DisplayMessage,
+  fmtNum,
+  fmtCost,
+  inferTaskKind,
+  thinkingSnippets,
+} from "./format";
 
-const markdownComponents: Components = {
-  a: ({ ...props }) => (
-    <a
-      {...props}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-accent underline-offset-2 hover:underline"
-    />
-  ),
-  code: ({ className, children, ...props }) => {
-    const isBlock = /language-/.test(className ?? "");
-    if (isBlock) {
-      return (
-        <code
-          className={`${className ?? ""} block`}
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code
-        className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-ink"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }) => (
-    <pre className="my-3 overflow-x-auto rounded-lg border border-line bg-surface-2 p-3 font-mono text-[0.82em] leading-relaxed">
-      {children}
-    </pre>
-  ),
-  h1: ({ children }) => (
-    <h1 className="mt-5 mb-2 text-xl font-semibold tracking-tight text-ink">{children}</h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="mt-5 mb-2 text-lg font-semibold tracking-tight text-ink">{children}</h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="mt-4 mb-1.5 text-base font-semibold tracking-tight text-ink">{children}</h3>
-  ),
-  p: ({ children }) => <p className="my-2.5 leading-relaxed">{children}</p>,
-  ul: ({ children }) => <ul className="my-2.5 ml-5 list-disc space-y-1">{children}</ul>,
-  ol: ({ children }) => <ol className="my-2.5 ml-5 list-decimal space-y-1">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  blockquote: ({ children }) => (
-    <blockquote className="my-3 border-l-2 border-accent/50 pl-3 text-ink-dim italic">
-      {children}
-    </blockquote>
-  ),
-  hr: () => <hr className="my-5 border-line" />,
-  table: ({ children }) => (
-    <div className="my-3 overflow-x-auto">
-      <table className="w-full border-collapse text-sm">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-line bg-surface-2 px-3 py-1.5 text-left font-semibold">
-      {children}
-    </th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-line px-3 py-1.5 align-top">{children}</td>
-  ),
-  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
-};
-
-function ArtifactCard({ artifact }: { artifact: Artifact }) {
-  return (
-    <a
-      href={artifact.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface p-3 transition-colors hover:border-accent/50 hover:bg-surface-2"
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent">
-        <FileText size={18} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-ink">{artifact.name}</span>
-        <span className="block text-xs text-ink-dim">PDF report</span>
-      </span>
-      <span className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-ink-dim transition-colors group-hover:border-accent/50 group-hover:text-accent">
-        <Download size={14} />
-        Download PDF
-      </span>
-    </a>
-  );
+function creditLabel(n: number): string {
+  if (n <= 0) return "free";
+  return `${n} credit${n === 1 ? "" : "s"}`;
 }
 
-export default function MessageView({ message }: { message: DisplayMessage }) {
+export default function MessageView({
+  message,
+  openArtifactPath,
+  onOpenArtifact,
+}: {
+  message: DisplayMessage;
+  openArtifactPath: string | null;
+  onOpenArtifact: (a: Artifact) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-surface-2 px-4 py-2.5 text-[0.95rem] leading-relaxed text-ink whitespace-pre-wrap">
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-surface-2 px-4 py-2.5 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-ink">
           {message.content}
         </div>
       </div>
@@ -114,9 +52,58 @@ export default function MessageView({ message }: { message: DisplayMessage }) {
   const hasUsage =
     !message.streaming &&
     (message.inputTokens > 0 || message.outputTokens > 0 || message.cost > 0);
+  const kind = inferTaskKind(message);
+  const credits = message.creditsUsed ?? TASK_CREDITS[kind];
+  const snippets = message.streaming ? thinkingSnippets(message) : [];
+  const sources = extractSources(message.content);
+  const pdfArtifact = message.artifacts[0];
+
+  async function copyResponse() {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
 
   return (
-    <div className="w-full">
+    <div className={`group relative w-full ${message.stopped ? "opacity-80" : ""}`}>
+      {/* Hover toolbar */}
+      {!message.streaming && message.content && (
+        <div className="absolute -top-1 right-0 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={copyResponse}
+            aria-label="Copy response"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-surface text-ink-dim transition-colors hover:border-accent/50 hover:text-accent"
+          >
+            {copied ? <Check size={13} className="text-ok" /> : <Copy size={13} />}
+          </button>
+          {pdfArtifact && (
+            <a
+              href={pdfArtifact.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Download PDF"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-surface text-ink-dim transition-colors hover:border-accent/50 hover:text-accent"
+            >
+              <Download size={13} />
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Streaming header: task badge */}
+      {message.streaming && message.taskKind && (
+        <div className="mb-2">
+          <TaskBadge kind={message.taskKind} />
+        </div>
+      )}
+
+      {message.streaming && snippets.length > 0 && <ThinkingTicker snippets={snippets} />}
+
       <AgentTrace steps={message.steps} live={message.streaming} />
 
       {message.content && (
@@ -127,7 +114,7 @@ export default function MessageView({ message }: { message: DisplayMessage }) {
         </div>
       )}
 
-      {message.streaming && !message.content && (
+      {message.streaming && !message.content && snippets.length === 0 && (
         <div className="flex items-center gap-1.5 py-1 text-sm text-ink-dim">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
           <span>Thinking…</span>
@@ -135,13 +122,39 @@ export default function MessageView({ message }: { message: DisplayMessage }) {
       )}
 
       {message.artifacts.map((a) => (
-        <ArtifactCard key={a.path} artifact={a} />
+        <DocumentCard
+          key={a.path}
+          artifact={a}
+          isOpen={openArtifactPath === a.path}
+          onOpen={onOpenArtifact}
+        />
       ))}
 
-      {hasUsage && (
-        <div className="mt-2.5 font-mono text-[0.7rem] text-ink-dim">
-          {fmtNum(message.inputTokens)} in · {fmtNum(message.outputTokens)} out ·{" "}
-          {fmtNum(message.cachedTokens)} cached · {fmtCost(message.cost)}
+      {!message.streaming && sources.length > 0 && <SourcesRow sources={sources} />}
+
+      {(hasUsage || message.stopped) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[0.7rem] text-ink-dim">
+          <TaskBadge kind={kind} className="opacity-80" />
+          {hasUsage && (
+            <>
+              <span>·</span>
+              <span>{fmtNum(message.inputTokens)} in</span>
+              <span>·</span>
+              <span>{fmtNum(message.outputTokens)} out</span>
+              <span>·</span>
+              <span>{fmtNum(message.cachedTokens)} cached</span>
+              <span>·</span>
+              <span>{fmtCost(message.cost)}</span>
+            </>
+          )}
+          <span>·</span>
+          <span>{creditLabel(credits)}</span>
+          {message.stopped && (
+            <>
+              <span>·</span>
+              <span className="text-err">stopped</span>
+            </>
+          )}
         </div>
       )}
     </div>
