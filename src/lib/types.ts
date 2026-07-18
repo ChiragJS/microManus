@@ -42,6 +42,10 @@ export interface Artifact {
   name: string;
   url: string;
   path: string;
+  /** report title */
+  title?: string;
+  /** full markdown source of the report — rendered in the artifact viewer panel */
+  markdown?: string;
 }
 
 /** One step of the agent trace, persisted on the assistant message. */

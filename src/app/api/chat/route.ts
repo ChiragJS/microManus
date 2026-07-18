@@ -1,30 +1,38 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { decrypt } from "@/lib/crypto";
 import { chatCompletion, LlmError, type LlmMessage } from "@/lib/llm";
 import { calcCost, type TokenUsage } from "@/lib/pricing";
-import type { AgentStep, Artifact, Chat, ApiKeyRow, ChatStreamEvent } from "@/lib/types";
 import {
-  AGENT_TOOLS,
-  webSearch,
-  fetchUrl,
-  createPdfReport,
-} from "@/lib/tools";
+  TASK_CREDITS,
+  type AgentStep,
+  type Artifact,
+  type Chat,
+  type ApiKeyRow,
+  type ChatStreamEvent,
+  type TaskKind,
+} from "@/lib/types";
+import { AGENT_TOOLS, webSearch, fetchUrl, createPdfReport } from "@/lib/tools";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
 const MAX_ITERATIONS = 12;
 const DELTA_CHUNK = 400;
+const THINKING_MAX = 600;
 
-function systemPrompt(): string {
+function systemPrompt(chatOnly: boolean): string {
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
   });
+  const noCredits = chatOnly
+    ? `\n\nThe user has no research credits left; you cannot search the web. Answer from knowledge, and if the request needs research, tell them to top up credits.`
+    : "";
   return `You are MicroManus, a rigorous deep-research agent. Today is ${today}.
+
+First decide what the message needs: (1) casual conversation, greetings, opinions, or questions you can answer confidently from knowledge → answer DIRECTLY and conversationally, NO tools, keep it brief; (2) questions about current events, facts to verify, comparisons, or anything time-sensitive → research with tools; (3) explicit report/document requests → research then create_pdf_report. Never search for messages like 'hi', 'thanks', 'how are you'.
 
 Operating principles:
 - Plan before acting. Briefly decide what you need to find out, then act.
@@ -33,7 +41,7 @@ Operating principles:
 - Cite sources inline as markdown links, e.g. [source](https://example.com), throughout your answer.
 - Be honest about uncertainty and gaps; never fabricate facts, numbers, or citations.
 - When the user asks for a report, document, or deliverable — or when the research clearly warrants one — call create_pdf_report with well-structured markdown: a title, clear sections, findings, recommendations, and a Sources list with links.
-- Write clear, well-organized markdown answers. Lead with the conclusion, then supporting detail.`;
+- Write clear, well-organized markdown answers. Lead with the conclusion, then supporting detail.${noCredits}`;
 }
 
 function sse(event: ChatStreamEvent): string {
@@ -83,8 +91,29 @@ export async function POST(request: Request) {
         controller.close();
       };
 
-      let creditConsumed = false;
-      let runCompleted = false;
+      let runId: string | undefined;
+
+      // Fire-and-forget-safe run row updater (sequential awaits are fine).
+      const persistRun = async (patch: Record<string, unknown>) => {
+        if (!runId) return;
+        try {
+          await supabase
+            .from("agent_runs")
+            .update({ ...patch, updated_at: new Date().toISOString() })
+            .eq("id", runId);
+        } catch {
+          // best-effort persistence
+        }
+      };
+      const isStopped = async (): Promise<boolean> => {
+        if (!runId) return false;
+        const { data } = await supabase
+          .from("agent_runs")
+          .select("status")
+          .eq("id", runId)
+          .single<{ status: string }>();
+        return data?.status === "stopped";
+      };
 
       try {
         // ---- Load chat + api key ----
@@ -112,12 +141,14 @@ export async function POST(request: Request) {
           return fail("Failed to decrypt API key");
         }
 
-        // ---- Consume one credit ----
-        const { data: remaining, error: creditErr } = await supabase.rpc("consume_credit");
-        if (creditErr) return fail("Failed to consume credit");
-        if (remaining === -1) return fail("OUT_OF_CREDITS");
-        creditConsumed = true;
-        const creditsRemaining = typeof remaining === "number" ? remaining : 0;
+        // ---- Credits: no upfront charge. Chat-only mode when out of credits. ----
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("credits")
+          .eq("id", userId)
+          .single<{ credits: number }>();
+        const startingCredits = profile?.credits ?? 0;
+        const chatOnly = startingCredits <= 0;
 
         // ---- Persist user message ----
         await supabase.from("messages").insert({
@@ -135,42 +166,96 @@ export async function POST(request: Request) {
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
 
-        const history: LlmMessage[] = [{ role: "system", content: systemPrompt() }];
+        const history: LlmMessage[] = [
+          { role: "system", content: systemPrompt(chatOnly) },
+        ];
         for (const row of priorRows ?? []) {
           if (row.content == null) continue;
           history.push({ role: row.role as "user" | "assistant", content: row.content });
         }
         // The just-inserted user message is already included via priorRows.
 
+        // ---- Create the run row (replace any prior run for this chat) ----
+        await supabase.from("agent_runs").delete().eq("chat_id", chatId).eq("user_id", userId);
+        const { data: runRow } = await supabase
+          .from("agent_runs")
+          .insert({
+            chat_id: chatId,
+            user_id: userId,
+            status: "running",
+            task_kind: "chat",
+            steps: [],
+          })
+          .select("id")
+          .single<{ id: string }>();
+        runId = runRow?.id;
+
         // ---- Agent loop ----
         const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
         const steps: AgentStep[] = [];
         const artifacts: Artifact[] = [];
         let finalText = "";
+        let partialText = "";
+        let latestThinking = "";
+        let kind: TaskKind = "chat";
+        let stopped = false;
+
+        // Task kind starts as "chat" and is upgraded behaviorally.
+        send({ type: "task", kind: "chat" });
 
         for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+          if (await isStopped()) {
+            stopped = true;
+            break;
+          }
+
           const result = await chatCompletion({
             provider: key.provider,
             baseUrl: key.base_url,
             apiKey,
             model: chat.model,
             messages: history,
-            tools: AGENT_TOOLS,
+            tools: chatOnly ? undefined : AGENT_TOOLS,
           });
 
           usage.inputTokens += result.usage.inputTokens;
           usage.outputTokens += result.usage.outputTokens;
           usage.cachedTokens += result.usage.cachedTokens;
 
+          if (result.content) partialText = result.content;
+
+          // ---- Thinking snippet ----
+          if (result.thinking && result.thinking.trim()) {
+            const text = result.thinking.slice(0, THINKING_MAX);
+            latestThinking = text;
+            send({ type: "thinking", text });
+            steps.push({
+              type: "thinking",
+              summary: result.thinking.slice(0, 80) + "…",
+              detail: text,
+            });
+            await persistRun({ steps, thinking: latestThinking, task_kind: kind });
+          }
+
           if (result.toolCalls.length > 0) {
-            // Record the assistant turn that requested tools.
+            // Record the assistant turn that requested tools (preserve provider
+            // blocks on Anthropic so replayed thinking blocks stay intact).
             history.push({
               role: "assistant",
               content: result.content ?? null,
               tool_calls: result.toolCalls,
+              providerBlocks:
+                key.provider === "anthropic"
+                  ? (result.rawContent as unknown[] | undefined)
+                  : undefined,
             });
 
             for (const call of result.toolCalls) {
+              if (await isStopped()) {
+                stopped = true;
+                break;
+              }
+
               let args: Record<string, unknown> = {};
               try {
                 args = JSON.parse(call.arguments || "{}");
@@ -178,11 +263,10 @@ export async function POST(request: Request) {
                 args = {};
               }
 
-              const callSummary = toolCallSummary(call.name, args);
               const callStep: AgentStep = {
                 type: "tool_call",
                 tool: call.name,
-                summary: callSummary,
+                summary: toolCallSummary(call.name, args),
               };
               steps.push(callStep);
               send({ type: "step", step: callStep });
@@ -193,9 +277,17 @@ export async function POST(request: Request) {
                 if (call.name === "web_search") {
                   resultContent = await webSearch(String(args.query ?? ""));
                   resultSummary = describeSearch(resultContent);
+                  if (kind === "chat") {
+                    kind = "research";
+                    send({ type: "task", kind: "research" });
+                  }
                 } else if (call.name === "fetch_url") {
                   resultContent = await fetchUrl(String(args.url ?? ""));
                   resultSummary = `${resultContent.length.toLocaleString()} chars`;
+                  if (kind === "chat") {
+                    kind = "research";
+                    send({ type: "task", kind: "research" });
+                  }
                 } else if (call.name === "create_pdf_report") {
                   const artifact = await createPdfReport(
                     String(args.title ?? "Report"),
@@ -203,9 +295,18 @@ export async function POST(request: Request) {
                     userId
                   );
                   artifacts.push(artifact);
-                  resultContent = JSON.stringify(artifact);
+                  resultContent = JSON.stringify({
+                    type: artifact.type,
+                    name: artifact.name,
+                    url: artifact.url,
+                    path: artifact.path,
+                  });
                   resultSummary = `${artifact.name} created`;
                   send({ type: "artifact", artifact });
+                  if (kind !== "report") {
+                    kind = "report";
+                    send({ type: "task", kind: "report" });
+                  }
                 } else {
                   resultContent = `Error: unknown tool "${call.name}".`;
                   resultSummary = "unknown tool";
@@ -228,7 +329,11 @@ export async function POST(request: Request) {
                 content: resultContent,
                 tool_call_id: call.id,
               });
+
+              await persistRun({ steps, thinking: latestThinking, task_kind: kind });
             }
+
+            if (stopped) break;
             // Continue the loop so the model can observe tool results.
             continue;
           }
@@ -241,14 +346,20 @@ export async function POST(request: Request) {
           break;
         }
 
-        if (!finalText) {
+        // ---- Resolve final text ----
+        if (stopped) {
+          finalText = partialText
+            ? `${partialText}\n\n_[stopped by user]_`
+            : "Stopped.";
+          send({ type: "delta", text: finalText });
+        } else if (!finalText) {
           finalText =
             "I reached the maximum number of research steps without producing a final answer. Please try narrowing the question.";
           send({ type: "delta", text: finalText });
         }
 
         // ---- Persist assistant message ----
-        const cost = calcCost(chat.model, usage);
+        let cost = calcCost(chat.model, usage);
         const { data: saved } = await supabase
           .from("messages")
           .insert({
@@ -265,7 +376,6 @@ export async function POST(request: Request) {
           })
           .select("id")
           .single();
-        runCompleted = true;
 
         // ---- Update chat: bump activity + maybe set title ----
         const patch: { updated_at: string; title?: string } = {
@@ -278,33 +388,104 @@ export async function POST(request: Request) {
         }
         await supabase.from("chats").update(patch).eq("id", chatId).eq("user_id", userId);
 
+        // ---- Contextual summary (normal completion only) ----
+        if (!stopped) {
+          try {
+            const recent = history
+              .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+              .slice(-6)
+              .map((m) => `${m.role}: ${(m.content ?? "").slice(0, 800)}`)
+              .join("\n\n");
+            const summaryResult = await chatCompletion({
+              provider: key.provider,
+              baseUrl: key.base_url,
+              apiKey,
+              model: chat.model,
+              maxTokens: 120,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "Summarize this conversation's context in 1-2 short sentences (topic, current state). No preamble.",
+                },
+                {
+                  role: "user",
+                  content: `${recent}\n\nassistant: ${finalText.slice(0, 800)}`,
+                },
+              ],
+            });
+            // Fold summary usage into the run before recomputing cost.
+            usage.inputTokens += summaryResult.usage.inputTokens;
+            usage.outputTokens += summaryResult.usage.outputTokens;
+            usage.cachedTokens += summaryResult.usage.cachedTokens;
+            cost = calcCost(chat.model, usage);
+
+            const summary = (summaryResult.content ?? "").trim();
+            if (summary) {
+              await supabase
+                .from("chats")
+                .update({ summary })
+                .eq("id", chatId)
+                .eq("user_id", userId);
+              send({ type: "summary", summary });
+            }
+          } catch {
+            // Summary is best-effort; never fail the run.
+          }
+        }
+
+        // ---- Charge post-hoc based on what the run actually did ----
+        const creditsUsed = TASK_CREDITS[kind];
+        let creditsRemaining = startingCredits;
+        try {
+          const { data: remaining } = await supabase.rpc("consume_credits", {
+            p_amount: creditsUsed,
+            p_reason: `agent_run:${kind}`,
+          });
+          creditsRemaining =
+            typeof remaining === "number" ? (remaining === -1 ? 0 : remaining) : 0;
+        } catch {
+          creditsRemaining = 0;
+        }
+
         send({
           type: "usage",
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           cachedTokens: usage.cachedTokens,
           cost,
-          creditsUsed: 1,
+          creditsUsed,
           creditsRemaining,
         });
-        send({ type: "done", messageId: saved?.id });
+
+        if (stopped) {
+          await persistRun({
+            status: "stopped",
+            content: finalText,
+            steps,
+            thinking: latestThinking,
+            task_kind: kind,
+          });
+          send({ type: "stopped", messageId: saved?.id });
+        } else {
+          await persistRun({
+            status: "done",
+            content: finalText,
+            steps,
+            thinking: latestThinking,
+            task_kind: kind,
+          });
+          send({ type: "done", messageId: saved?.id });
+        }
         controller.close();
       } catch (err) {
-        let msg =
+        const msg =
           err instanceof LlmError
             ? err.message
             : err instanceof Error
               ? err.message
               : "Unexpected error";
-        // The run failed before producing an answer — give the credit back.
-        if (creditConsumed && !runCompleted) {
-          try {
-            await createAdminClient().rpc("refund_credit", { p_user_id: userId });
-            msg += " — your credit was refunded.";
-          } catch {
-            // refund is best-effort
-          }
-        }
+        await persistRun({ status: "error", error: msg });
         try {
           send({ type: "error", message: msg });
           send({ type: "done" });

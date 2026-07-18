@@ -26,6 +26,12 @@ export interface LlmMessage {
   content: string | null;
   tool_calls?: LlmToolCall[];
   tool_call_id?: string;
+  /**
+   * Opaque provider content blocks to replay verbatim. Used on the Anthropic
+   * path so that thinking blocks preceding a tool_use turn are preserved when
+   * the turn is replayed (required once thinking is enabled).
+   */
+  providerBlocks?: unknown[];
 }
 
 export interface LlmResult {
@@ -33,6 +39,10 @@ export interface LlmResult {
   toolCalls: LlmToolCall[];
   usage: TokenUsage;
   stopReason: "stop" | "tool_calls" | "length" | "other";
+  /** Summarized reasoning/thinking text, if the model returned any (empty → undefined). */
+  thinking?: string;
+  /** Verbatim provider content blocks (Anthropic only) — the raw `data.content` array. */
+  rawContent?: unknown;
 }
 
 export interface LlmRequest {
@@ -106,9 +116,17 @@ async function openaiCompletion(req: LlmRequest): Promise<LlmResult> {
       arguments: tc.function.arguments,
     })
   );
+  // Kimi/DeepSeek-style reasoning traces. Never replayed back to the model.
+  const reasoning =
+    typeof msg.reasoning_content === "string"
+      ? msg.reasoning_content
+      : typeof msg.reasoning === "string"
+        ? msg.reasoning
+        : "";
   return {
     content: msg.content ?? null,
     toolCalls,
+    thinking: reasoning.length ? reasoning : undefined,
     usage: {
       inputTokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
       outputTokens: usage.completion_tokens ?? 0,
@@ -140,6 +158,12 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
       continue;
     }
     if (m.role === "assistant") {
+      // Replay verbatim provider blocks when available (preserves thinking
+      // blocks + signatures that Anthropic requires alongside tool_use).
+      if (Array.isArray(m.providerBlocks) && m.providerBlocks.length) {
+        messages.push({ role: "assistant", content: m.providerBlocks as AnthropicBlock[] });
+        continue;
+      }
       const blocks: AnthropicBlock[] = [];
       if (m.content) blocks.push({ type: "text", text: m.content });
       for (const tc of m.tool_calls ?? []) {
@@ -176,12 +200,18 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
   if (system.length) system[system.length - 1].cache_control = { type: "ephemeral" };
   const lastMsg = messages[messages.length - 1];
   if (lastMsg?.content.length) {
-    lastMsg.content[lastMsg.content.length - 1].cache_control = { type: "ephemeral" };
+    // Don't put the cache breakpoint on a thinking block — walk back to the
+    // last non-thinking block (or skip entirely if there isn't one).
+    let bp = lastMsg.content.length - 1;
+    while (bp >= 0 && lastMsg.content[bp].type === "thinking") bp--;
+    if (bp >= 0) lastMsg.content[bp].cache_control = { type: "ephemeral" };
   }
 
   const body: Record<string, unknown> = {
     model: req.model,
     max_tokens: req.maxTokens ?? 8192,
+    // Adaptive thinking with summarized display — surfaces reasoning snippets.
+    thinking: { type: "adaptive", display: "summarized" },
     messages,
   };
   if (system.length) body.system = system;
@@ -209,9 +239,11 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
   const data = await res.json();
 
   let content: string | null = null;
+  let thinking = "";
   const toolCalls: LlmToolCall[] = [];
   for (const block of data.content ?? []) {
     if (block.type === "text") content = (content ?? "") + block.text;
+    if (block.type === "thinking") thinking += block.thinking ?? "";
     if (block.type === "tool_use") {
       toolCalls.push({ id: block.id, name: block.name, arguments: JSON.stringify(block.input ?? {}) });
     }
@@ -220,6 +252,9 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
   return {
     content,
     toolCalls,
+    thinking: thinking.length ? thinking : undefined,
+    // Verbatim blocks so the caller can replay this turn with thinking intact.
+    rawContent: data.content,
     usage: {
       // cache writes billed ≈ input rate (slight premium ignored for simplicity)
       inputTokens: (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
