@@ -1,4 +1,4 @@
-import type { MessageRow, AgentStep, Artifact } from "@/lib/types";
+import type { MessageRow, AgentStep, Artifact, TaskKind, AgentRun } from "@/lib/types";
 
 /** Client-side representation of a rendered message. */
 export interface DisplayMessage {
@@ -11,8 +11,14 @@ export interface DisplayMessage {
   outputTokens: number;
   cachedTokens: number;
   cost: number;
+  /** task classification for this run — drives the badge + credit line */
+  taskKind?: TaskKind | null;
+  /** credits charged for this run (0 = free chat) */
+  creditsUsed?: number | null;
   /** true while the assistant answer is still streaming */
   streaming?: boolean;
+  /** the run was stopped by the user */
+  stopped?: boolean;
 }
 
 export function fromRow(row: MessageRow): DisplayMessage {
@@ -27,6 +33,51 @@ export function fromRow(row: MessageRow): DisplayMessage {
     cachedTokens: row.cached_tokens ?? 0,
     cost: row.cost ?? 0,
   };
+}
+
+/** Infer the task kind of a finished message from what the run actually did. */
+export function inferTaskKind(m: DisplayMessage): TaskKind {
+  if (m.taskKind) return m.taskKind;
+  if (m.artifacts.length > 0) return "report";
+  if (m.steps.some((s) => s.type === "tool_call" || s.type === "tool_result")) {
+    return "research";
+  }
+  return "chat";
+}
+
+/** Latest thinking snippets on a message, newest last, for the ticker. */
+export function thinkingSnippets(m: DisplayMessage): string[] {
+  return m.steps
+    .filter((s) => s.type === "thinking")
+    .map((s) => (s.detail || s.summary || "").trim())
+    .filter(Boolean);
+}
+
+/** Build a live assistant bubble from a persisted/background AgentRun. */
+export function runToDisplayMessage(run: AgentRun): DisplayMessage {
+  const steps = Array.isArray(run.steps) ? [...run.steps] : [];
+  if (run.thinking && !steps.some((s) => s.type === "thinking")) {
+    steps.push({ type: "thinking", summary: firstLine(run.thinking), detail: run.thinking });
+  }
+  return {
+    id: `run-${run.id}`,
+    role: "assistant",
+    content: run.content ?? "",
+    steps,
+    artifacts: [],
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    cost: 0,
+    taskKind: run.task_kind,
+    streaming: run.status === "running",
+    stopped: run.status === "stopped",
+  };
+}
+
+export function firstLine(s: string, n = 90): string {
+  const line = (s.split("\n").find((l) => l.trim()) ?? s).trim();
+  return line.length > n ? `${line.slice(0, n - 1)}…` : line;
 }
 
 export function fmtNum(n: number): string {

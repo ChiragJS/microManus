@@ -49,3 +49,70 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+
+/* ---- Additive: chat v2 animations & utilities ---- */
+
+/* Thinking ticker: new snippet rises + fades in */
+@keyframes mm-ticker-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-ticker-in {
+  animation: mm-ticker-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Shimmer sweep across the "thinking" label */
+@keyframes mm-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.mm-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--text-dim) 0%,
+    var(--text-dim) 35%,
+    var(--accent) 50%,
+    var(--text-dim) 65%,
+    var(--text-dim) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mm-shimmer 2.4s linear infinite;
+}
+
+/* Sidebar resize handle: no text selection while dragging */
+.mm-resizing,
+.mm-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* Citation hover popover fade */
+@keyframes mm-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-pop-in {
+  animation: mm-pop-in 0.14s ease both;
+}
