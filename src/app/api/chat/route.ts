@@ -284,6 +284,7 @@ export async function POST(request: Request) {
           outputTokens: usage.outputTokens,
           cachedTokens: usage.cachedTokens,
           cost,
+          creditsUsed: 1,
           creditsRemaining,
         });
         send({ type: "done", messageId: saved?.id });
