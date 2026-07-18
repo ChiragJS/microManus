@@ -18,7 +18,7 @@ export default function ThinkingTicker({ snippets }: { snippets: string[] }) {
         <Sparkles size={13} className="animate-pulse text-accent" />
         <span className="mm-shimmer font-mono text-[0.7rem] tracking-wide">thinking</span>
       </div>
-      <div className="relative overflow-hidden pl-[1.35rem]">
+      <div className="relative min-h-[2.4rem] overflow-hidden pl-[1.35rem]">
         {previous && (
           <p
             key={`prev-${previous}`}

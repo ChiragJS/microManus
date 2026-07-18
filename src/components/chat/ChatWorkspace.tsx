@@ -580,7 +580,7 @@ export default function ChatWorkspace({
               </div>
 
               {(credits === 0 || error) && (
-                <div className="mm-fade-in mx-auto w-full max-w-3xl px-4">
+                <div className="mx-auto w-full max-w-3xl px-4">
                   {error ? (
                     <p className="flex items-center gap-2 rounded-lg border border-err/40 bg-err/10 px-4 py-2.5 text-sm text-err">
                       <AlertCircle size={16} />

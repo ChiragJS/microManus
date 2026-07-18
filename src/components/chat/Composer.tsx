@@ -67,7 +67,7 @@ export default function Composer({
               onClick={onStop}
               disabled={stopping}
               aria-label="Stop"
-              className="mm-fade-in flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 text-sm text-ink-dim transition-[color,border-color,opacity] duration-150 hover:border-err/60 hover:text-err disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 text-sm text-ink-dim transition-[color,border-color,opacity] duration-150 hover:border-err/60 hover:text-err disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Square size={14} className={stopping ? "" : "fill-current"} />
               {stopping ? "Stopping…" : "Stop"}
@@ -78,7 +78,7 @@ export default function Composer({
               onClick={onSend}
               disabled={!canSend}
               aria-label="Send"
-              className="mm-fade-in flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-bg transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-bg transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
             >
               <ArrowUp size={18} />
             </button>

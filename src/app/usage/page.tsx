@@ -103,7 +103,7 @@ export default async function UsagePage() {
           {cards.map((c) => (
             <div
               key={c.label}
-              className="mm-fade-in rounded-xl border border-line bg-surface p-4"
+              className="rounded-xl border border-line bg-surface p-4"
             >
               <div className="flex items-center gap-2 text-xs text-ink-dim">
                 <c.icon size={16} aria-hidden />
@@ -133,7 +133,7 @@ export default async function UsagePage() {
               </Link>
             </div>
           ) : (
-            <div className="mm-fade-in overflow-x-auto rounded-xl border border-line bg-surface">
+            <div className="overflow-x-auto rounded-xl border border-line bg-surface">
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-line text-xs text-ink-dim">

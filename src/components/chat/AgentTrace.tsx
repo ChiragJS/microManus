@@ -98,7 +98,10 @@ export default function AgentTrace({
         <span className="font-mono tracking-tight">{summaryLabel}</span>
       </button>
 
-      <div className="mm-collapse" data-open={open || live ? "true" : "false"}>
+      {/* While streaming, render plain + always-open (no height animation, so
+          appended steps don't jitter the layout or fight autoscroll). The
+          grid collapse animation applies only to the explicit user toggle. */}
+      <div className={live ? "" : "mm-collapse"} data-open={open ? "true" : "false"}>
         <div>
           <ol className="mt-2 space-y-1.5 border-l border-line pl-3">
             {steps.map((step, i) => {

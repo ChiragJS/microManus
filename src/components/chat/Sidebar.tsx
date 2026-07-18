@@ -173,7 +173,7 @@ export default function Sidebar({
         style={{ width: asideWidth }}
         className="mm-anim-width relative flex h-full shrink-0 flex-col border-r border-line bg-surface"
       >
-        <div className="mm-fade-in flex h-full flex-col items-center gap-3 py-4">
+        <div className="flex h-full flex-col items-center gap-3 py-4">
           <LogoMark size={24} />
           <button
             type="button"
@@ -227,7 +227,7 @@ export default function Sidebar({
         }`}
       />
 
-      <div className="mm-fade-in flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2">
           <LogoMark size={20} />
