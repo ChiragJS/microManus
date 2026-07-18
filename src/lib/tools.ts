@@ -201,7 +201,7 @@ export async function createPdfReport(
   const safeTitle = (title || "report").trim();
   const name = `${slugify(safeTitle)}.pdf`;
 
-  return { type: "pdf", name, url: data.publicUrl, path };
+  return { type: "pdf", name, url: data.publicUrl, path, title: safeTitle, markdown };
 }
 
 function slugify(s: string): string {
