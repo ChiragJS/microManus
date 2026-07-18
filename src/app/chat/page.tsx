@@ -28,8 +28,14 @@ export default async function ChatIndexPage() {
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
-    supabase.from("profiles").select("credits").eq("id", user.id).single(),
+    supabase
+      .from("profiles")
+      .select("credits, unlocked")
+      .eq("id", user.id)
+      .single(),
   ]);
+
+  if (profile && !profile.unlocked) redirect("/paywall");
 
   return (
     <ChatWorkspace
