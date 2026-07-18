@@ -53,6 +53,8 @@ export interface LlmRequest {
   messages: LlmMessage[];
   tools?: LlmTool[];
   maxTokens?: number;
+  /** set false to suppress thinking/reasoning for this call (e.g. cheap summary calls) */
+  thinking?: boolean;
 }
 
 export async function chatCompletion(req: LlmRequest): Promise<LlmResult> {
@@ -210,10 +212,14 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
   const body: Record<string, unknown> = {
     model: req.model,
     max_tokens: req.maxTokens ?? 8192,
-    // Adaptive thinking with summarized display — surfaces reasoning snippets.
-    thinking: { type: "adaptive", display: "summarized" },
     messages,
   };
+  // Adaptive thinking with summarized display — surfaces reasoning snippets.
+  // Only Claude 4.6+ supports {type:"adaptive"}; older tiers (e.g. Haiku 4.5)
+  // 400 on it, so gate by model and omit entirely when unsupported/disabled.
+  if (req.thinking !== false && supportsAdaptiveThinking(req.model)) {
+    body.thinking = { type: "adaptive", display: "summarized" };
+  }
   if (system.length) body.system = system;
   if (req.tools?.length) {
     body.tools = req.tools.map((t) => ({
@@ -270,6 +276,12 @@ async function anthropicCompletion(req: LlmRequest): Promise<LlmResult> {
             ? "length"
             : "other",
   };
+}
+
+/** Claude 4.6+ (opus-4-6/4-7/4-8, sonnet-4-6, sonnet-5, fable/mythos) support adaptive thinking. */
+function supportsAdaptiveThinking(model: string): boolean {
+  if (/haiku/i.test(model)) return false;
+  return /^claude-(opus-4-[6-9]|sonnet-4-[6-9]|sonnet-5|fable|mythos)/i.test(model);
 }
 
 // ---------------- helpers ----------------

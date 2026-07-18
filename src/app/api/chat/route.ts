@@ -20,16 +20,13 @@ const MAX_ITERATIONS = 12;
 const DELTA_CHUNK = 400;
 const THINKING_MAX = 600;
 
-function systemPrompt(chatOnly: boolean): string {
+function systemPrompt(): string {
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
   });
-  const noCredits = chatOnly
-    ? `\n\nThe user has no research credits left; you cannot search the web. Answer from knowledge, and if the request needs research, tell them to top up credits.`
-    : "";
   return `You are MicroManus, a rigorous deep-research agent. Today is ${today}.
 
 First decide what the message needs: (1) casual conversation, greetings, opinions, or questions you can answer confidently from knowledge → answer DIRECTLY and conversationally, NO tools, keep it brief; (2) questions about current events, facts to verify, comparisons, or anything time-sensitive → research with tools; (3) explicit report/document requests → research then create_pdf_report. Never search for messages like 'hi', 'thanks', 'how are you'.
@@ -41,7 +38,7 @@ Operating principles:
 - Cite sources inline as markdown links, e.g. [source](https://example.com), throughout your answer.
 - Be honest about uncertainty and gaps; never fabricate facts, numbers, or citations.
 - When the user asks for a report, document, or deliverable — or when the research clearly warrants one — call create_pdf_report with well-structured markdown: a title, clear sections, findings, recommendations, and a Sources list with links.
-- Write clear, well-organized markdown answers. Lead with the conclusion, then supporting detail.${noCredits}`;
+- Write clear, well-organized markdown answers. Lead with the conclusion, then supporting detail.`;
 }
 
 function sse(event: ChatStreamEvent): string {
@@ -141,14 +138,14 @@ export async function POST(request: Request) {
           return fail("Failed to decrypt API key");
         }
 
-        // ---- Credits: no upfront charge. Chat-only mode when out of credits. ----
+        // ---- Credits: hard gate. 0 credits -> must refill before any run. ----
+        // (Charging itself is post-hoc + tiered: chat 0, research 1, report 2.)
         const { data: profile } = await supabase
           .from("profiles")
           .select("credits")
           .eq("id", userId)
           .single<{ credits: number }>();
-        const startingCredits = profile?.credits ?? 0;
-        const chatOnly = startingCredits <= 0;
+        if ((profile?.credits ?? 0) <= 0) return fail("OUT_OF_CREDITS");
 
         // ---- Persist user message ----
         await supabase.from("messages").insert({
@@ -167,7 +164,7 @@ export async function POST(request: Request) {
           .order("created_at", { ascending: true });
 
         const history: LlmMessage[] = [
-          { role: "system", content: systemPrompt(chatOnly) },
+          { role: "system", content: systemPrompt() },
         ];
         for (const row of priorRows ?? []) {
           if (row.content == null) continue;
@@ -215,7 +212,7 @@ export async function POST(request: Request) {
             apiKey,
             model: chat.model,
             messages: history,
-            tools: chatOnly ? undefined : AGENT_TOOLS,
+            tools: AGENT_TOOLS,
           });
 
           usage.inputTokens += result.usage.inputTokens;
@@ -401,7 +398,8 @@ export async function POST(request: Request) {
               baseUrl: key.base_url,
               apiKey,
               model: chat.model,
-              maxTokens: 120,
+              maxTokens: 200,
+              thinking: false, // don't let thinking eat the tiny output budget
               messages: [
                 {
                   role: "system",
@@ -436,7 +434,7 @@ export async function POST(request: Request) {
 
         // ---- Charge post-hoc based on what the run actually did ----
         const creditsUsed = TASK_CREDITS[kind];
-        let creditsRemaining = startingCredits;
+        let creditsRemaining = profile?.credits ?? 0;
         try {
           const { data: remaining } = await supabase.rpc("consume_credits", {
             p_amount: creditsUsed,

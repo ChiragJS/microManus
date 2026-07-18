@@ -32,6 +32,7 @@ export function fromRow(row: MessageRow): DisplayMessage {
     outputTokens: row.output_tokens ?? 0,
     cachedTokens: row.cached_tokens ?? 0,
     cost: row.cost ?? 0,
+    stopped: (row.content ?? "").includes("_[stopped by user]_"),
   };
 }
 

@@ -117,7 +117,9 @@ function applyEvent(chatId: string, ev: ChatStreamEvent) {
         ...r,
         streaming: false,
         finished: "error",
-        error: ev.message,
+        // OUT_OF_CREDITS renders as the top-up banner (credits -> 0), not a raw error
+        error: ev.message === "OUT_OF_CREDITS" ? null : ev.message,
+        creditsRemaining: ev.message === "OUT_OF_CREDITS" ? 0 : r.creditsRemaining,
         assistant: { ...r.assistant, streaming: false },
       }));
       break;
@@ -584,7 +586,7 @@ export default function ChatWorkspace({
                     <div className="flex items-center justify-between rounded-lg border border-accent/40 bg-accent-dim px-4 py-2.5 text-sm text-ink">
                       <span className="flex items-center gap-2">
                         <AlertCircle size={16} className="text-accent" />
-                        Research paused — top up to keep researching (chat is free).
+                        Out of credits — top up to continue.
                       </span>
                       <Link
                         href="/paywall"
@@ -605,6 +607,7 @@ export default function ChatWorkspace({
                 streaming={streaming}
                 stopping={stopping}
                 modelId={activeChat.model}
+                disabled={credits === 0}
               />
             </div>
 

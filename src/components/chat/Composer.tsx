@@ -12,6 +12,7 @@ export default function Composer({
   streaming,
   stopping,
   modelId,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -20,6 +21,8 @@ export default function Composer({
   streaming: boolean;
   stopping: boolean;
   modelId: string;
+  /** hard-disabled (e.g. out of credits) */
+  disabled?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -33,12 +36,12 @@ export default function Composer({
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!streaming && value.trim()) onSend();
+      if (!streaming && !disabled && value.trim()) onSend();
     }
   }
 
   const modelName = getModel(modelId)?.name ?? modelId;
-  const canSend = !streaming && value.trim().length > 0;
+  const canSend = !streaming && !disabled && value.trim().length > 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-4">
@@ -50,7 +53,12 @@ export default function Composer({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
-            placeholder="Ask MicroManus to research anything…"
+            disabled={disabled}
+            placeholder={
+              disabled
+                ? "Out of credits — top up to continue"
+                : "Ask MicroManus to research anything…"
+            }
             className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[0.95rem] text-ink placeholder:text-ink-dim focus:outline-none"
           />
           {streaming ? (
@@ -84,7 +92,7 @@ export default function Composer({
           <>
             <span>Model: {modelName}</span>
             <span className="text-line">|</span>
-            <span>chat free · research 1 credit · report 2 credits</span>
+            <span>chat free · research 1 credit · report 2 credits · 0 credits = refill required</span>
           </>
         )}
       </div>
