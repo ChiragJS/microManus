@@ -16,7 +16,7 @@ const STEPS = [
     n: "01",
     icon: LogIn,
     title: "Sign in",
-    body: "One tap with Google or GitHub. No passwords, no forms.",
+    body: "One tap with GitHub. No passwords, no forms.",
   },
   {
     n: "02",

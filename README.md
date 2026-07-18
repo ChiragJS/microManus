@@ -5,7 +5,7 @@
 ## Stack
 
 - **Next.js 15** (App Router, TypeScript, Tailwind v4) — deployed on Vercel
-- **Supabase** — Google/GitHub OAuth, Postgres (RLS), storage for PDF artifacts
+- **Supabase** — GitHub OAuth, Postgres (RLS), storage for PDF artifacts
 - **Stripe** (test mode) — $5 checkout → 5 credits; coupon `SID_DRDROID` as bypass
 - **Brave Search API** — the agent's web access
 - **LLM**: user-supplied keys. OpenAI / Kimi (Moonshot) / any OpenAI-compatible endpoint via `/chat/completions`; Anthropic via native Messages API with prompt caching (`cache_control`). Usage normalized to input / output / cached tokens; cost computed from the model chosen when the key was added (`src/lib/pricing.ts`).
@@ -29,7 +29,7 @@ bun run dev
 ### 1. Supabase
 1. Create a project at supabase.com.
 2. SQL editor → run `supabase/schema.sql` (tables, RLS, RPCs, storage bucket).
-3. Auth → Providers: enable **Google** and **GitHub** (create OAuth apps; callback URL is `https://YOUR_PROJECT.supabase.co/auth/v1/callback`).
+3. Auth → Providers: enable **GitHub** (create a GitHub OAuth app; callback URL is `https://YOUR_PROJECT.supabase.co/auth/v1/callback`).
 4. Auth → URL Configuration: set Site URL to the deployed URL, add `http://localhost:3000/**` and `https://YOUR_APP.vercel.app/**` to redirect URLs.
 5. Copy Project URL, anon key, service-role key into env vars.
 

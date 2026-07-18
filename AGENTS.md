@@ -6,10 +6,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # MicroManus — project context
 
-Deep research AI agent web app with usage-based billing. Next.js 15 (App Router, TS, Tailwind v4), Supabase (auth Google/GitHub + Postgres + storage), Stripe test mode, Brave Search. Deployed on Vercel. Package manager: **bun** (registry overridden to public npm in `.npmrc`/`bunfig.toml`).
+Deep research AI agent web app with usage-based billing. Next.js 15 (App Router, TS, Tailwind v4), Supabase (auth GitHub + Postgres + storage), Stripe test mode, Brave Search. Deployed on Vercel. Package manager: **bun** (registry overridden to public npm in `.npmrc`/`bunfig.toml`).
 
 ## Product flow
-1. Social login only (Google/GitHub) via Supabase OAuth → `/auth/callback`.
+1. Social login only (GitHub) via Supabase OAuth → `/auth/callback`.
 2. After signup user is LOCKED (`profiles.unlocked=false`). Paywall at `/paywall`: coupon `SID_DRDROID` (one-time, RPC `redeem_coupon`) OR pay $5 via Stripe Checkout. Either grants 5 credits + unlock.
 3. `/chat` — conversation threads with a deep-research agent (think → tool call → observe → loop). Tools: Brave web search, fetch URL, create PDF report (stored in Supabase storage bucket `artifacts`).
 4. 1 credit consumed per agent run (RPC `consume_credit`, returns -1 if insufficient → show top-up).
