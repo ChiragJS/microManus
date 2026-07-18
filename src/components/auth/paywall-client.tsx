@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
@@ -246,6 +247,18 @@ export function PaywallClient({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Back to app — only when already unlocked (locked users can't skip the paywall) */}
+      {alreadyUnlocked && (
+        <button
+          type="button"
+          onClick={() => router.push("/chat")}
+          className="mb-4 -ml-1 flex items-center gap-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+        >
+          <ArrowLeft size={15} />
+          Back to chat
+        </button>
       )}
 
       <div className="mb-6 text-center">
