@@ -79,29 +79,43 @@ export function PaywallClient({
 
     async function run() {
       setConfirming(true);
-      // Fallback crediting in case the webhook lags.
+
+      // Confirm the checkout session server-side. This is idempotent with the
+      // webhook — whichever runs first credits; the other is a no-op that still
+      // returns ok. If it reports ok, crediting is done: go straight to chat.
       try {
-        await fetch("/api/checkout/confirm", {
+        const res = await fetch("/api/checkout/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId }),
         });
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          credits?: number;
+        } | null;
+        if (res.ok && data?.ok) {
+          if (typeof data.credits === "number") setCredits(data.credits);
+          router.replace("/chat");
+          return;
+        }
       } catch {
-        // ignore — polling below will still catch webhook crediting
+        // fall through to polling — the webhook may still credit
       }
 
-      const baseline = initialCredits;
+      // Fallback: poll for the webhook having unlocked the account. NOTE: do
+      // not compare against a page-load baseline — the webhook often credits
+      // BEFORE Stripe redirects back, so the baseline already includes the
+      // new credits and a "> baseline" check would spin forever.
       for (let i = 0; i < 15 && !cancelledFlag; i++) {
         try {
           const res = await fetch("/api/me", { cache: "no-store" });
           if (res.ok) {
             const me: MeResponse = await res.json();
-            if (me.unlocked && me.credits > baseline) {
-              setCredits(me.credits);
+            setCredits(me.credits);
+            if (me.unlocked && me.credits > 0) {
               router.replace("/chat");
               return;
             }
-            setCredits(me.credits);
           }
         } catch {
           // keep polling
