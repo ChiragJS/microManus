@@ -142,19 +142,21 @@ export default function AddKeyForm() {
           </select>
         </div>
 
-        <div className="sm:col-span-2">
-          <label className="mb-1.5 block text-xs text-ink-dim">Base URL</label>
-          <input
-            type="url"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            readOnly={provider !== "custom"}
-            placeholder="https://api.example.com/v1"
-            className={`${inputClass} font-mono ${
-              provider !== "custom" ? "opacity-60" : ""
-            }`}
-          />
-        </div>
+        {provider === "custom" && (
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-xs text-ink-dim">
+              Base URL{" "}
+              <span className="text-ink-dim/60">(OpenAI-compatible endpoint)</span>
+            </label>
+            <input
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.example.com/v1"
+              className={`${inputClass} font-mono`}
+            />
+          </div>
+        )}
 
         <div>
           <div className="mb-1.5 flex items-center justify-between">

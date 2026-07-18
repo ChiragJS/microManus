@@ -42,7 +42,6 @@ export async function POST(request: Request) {
   }
 
   const provider = body.provider as Provider | undefined;
-  const baseUrl = body.baseUrl?.trim();
   const model = body.model?.trim();
   const apiKey = body.apiKey?.trim();
   const label = body.label?.trim() || null;
@@ -50,7 +49,11 @@ export async function POST(request: Request) {
   if (!provider || !(provider in PROVIDERS)) {
     return Response.json({ error: "Invalid provider" }, { status: 400 });
   }
-  if (!baseUrl) {
+  // Known providers have fixed endpoints — the client never chooses them.
+  // Only "custom" takes a user-supplied URL.
+  const baseUrl =
+    provider === "custom" ? body.baseUrl?.trim() : PROVIDERS[provider].baseUrl;
+  if (!baseUrl || !/^https?:\/\//.test(baseUrl)) {
     return Response.json({ error: "Base URL is required" }, { status: 400 });
   }
   if (!model) {
