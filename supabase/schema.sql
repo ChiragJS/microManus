@@ -289,11 +289,15 @@ revoke execute on function public.refund_credit(uuid) from public, anon, authent
 grant execute on function public.refund_credit(uuid) to service_role;
 
 -- Lock down API-role execution: RPCs require a signed-in user; the signup
--- trigger function is never called through the API.
-revoke execute on function public.consume_credit() from anon;
-revoke execute on function public.consume_credits(integer, text) from anon;
-revoke execute on function public.redeem_coupon(text) from anon;
-revoke execute on function public.handle_new_user() from anon, authenticated;
+-- trigger function is never called through the API. (Revoke PUBLIC too —
+-- functions default to EXECUTE for PUBLIC.)
+revoke execute on function public.consume_credit() from public, anon;
+revoke execute on function public.consume_credits(integer, text) from public, anon;
+revoke execute on function public.redeem_coupon(text) from public, anon;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+grant execute on function public.consume_credit() to authenticated;
+grant execute on function public.consume_credits(integer, text) to authenticated;
+grant execute on function public.redeem_coupon(text) to authenticated;
 
 -- ============ storage ============
 -- Public bucket for generated PDF artifacts
