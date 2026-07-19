@@ -23,7 +23,7 @@ import MessageView from "./MessageView";
 import Composer from "./Composer";
 import ArtifactViewer from "./ArtifactViewer";
 import RightRail from "./RightRail";
-import { extractSources, type Source } from "./markdown";
+import { messageSources, type Source } from "./markdown";
 import {
   type DisplayMessage,
   fromRow,
@@ -453,7 +453,7 @@ export default function ChatWorkspace({
     const byHref = new Map<string, Source>();
     for (const m of messages) {
       if (m.role !== "assistant") continue;
-      for (const s of extractSources(m.content)) {
+      for (const s of messageSources(m.content, m.steps)) {
         if (!byHref.has(s.href)) byHref.set(s.href, s);
       }
     }

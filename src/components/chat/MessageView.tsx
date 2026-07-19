@@ -12,7 +12,7 @@ import ThinkingTicker from "./ThinkingTicker";
 import DocumentCard from "./DocumentCard";
 import {
   markdownComponents,
-  extractSources,
+  messageSources,
   SourcesRow,
 } from "./markdown";
 import {
@@ -58,7 +58,7 @@ function MessageView({
   const kind = inferTaskKind(message);
   const credits = message.creditsUsed ?? TASK_CREDITS[kind];
   const snippets = message.streaming ? thinkingSnippets(message) : [];
-  const sources = extractSources(message.content);
+  const sources = messageSources(message.content, message.steps);
   const pdfArtifact = message.artifacts[0];
 
   async function copyResponse() {

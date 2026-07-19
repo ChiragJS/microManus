@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Globe, FileText } from "lucide-react";
+import type { AgentStep } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
 /* Source extraction + favicon helpers                                 */
@@ -62,6 +63,29 @@ export function extractSources(content: string): Source[] {
   while ((m = MD_LINK.exec(content))) add(m[2], m[1]);
   while ((m = AUTO_LINK.exec(content))) add(m[1], "");
   while ((m = BARE_LINK.exec(content))) add(m[0], "");
+  return [...byHref.values()];
+}
+
+/**
+ * Sources the agent actually read — the URLs it opened via the fetch_url tool
+ * (stored as the step summary). This is the authoritative source list even
+ * when the model cites everything in the PDF instead of the chat answer.
+ * Merged with any inline links in the answer; artifact/PDF links excluded.
+ */
+export function messageSources(
+  content: string,
+  steps?: AgentStep[] | null
+): Source[] {
+  const byHref = new Map<string, Source>();
+  for (const s of extractSources(content)) byHref.set(s.href, s);
+  for (const step of steps ?? []) {
+    if (step.type !== "tool_call" || step.tool !== "fetch_url") continue;
+    const url = (step.summary ?? "").trim();
+    if (!/^https?:\/\//.test(url) || ARTIFACT_LINK.test(url)) continue;
+    if (byHref.has(url)) continue;
+    const host = hostOf(url);
+    byHref.set(url, { href: url, host, title: host });
+  }
   return [...byHref.values()];
 }
 
