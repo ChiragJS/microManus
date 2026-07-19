@@ -148,6 +148,40 @@ function nextKey(): string {
   return `k${keySeq}`;
 }
 
+// The built-in PDF fonts (Times/Helvetica/Courier) are WinAnsi-encoded and
+// throw on glyphs they can't encode — ₹, emoji, arrows, CJK/Devanagari, etc.
+// That's what makes create_pdf_report fail on Indian-context reports. Map the
+// common ones to ASCII and drop the rest so rendering can never crash.
+const SYMBOL_MAP: Record<string, string> = {
+  "₹": "Rs. ", "→": " -> ", "←": " <- ", "↔": " <-> ", "⇒": " => ",
+  "⇐": " <= ", "≈": "~", "≠": "!=", "≥": ">=", "≤": "<=", "×": "x",
+  "÷": "/", "•": "•", "✓": "[x]", "✔": "[x]", "✅": "[x]", "✗": "[ ]",
+  "✘": "[ ]", "❌": "[ ]", "★": "*", "☆": "*", "▪": "-", "▸": ">", "·": "·",
+};
+
+// Codepoints > 0xFF that ARE encodable in WinAnsi (the CP1252 hi-punctuation).
+const WINANSI_EXTRA = new Set(
+  "€‚ƒ„…†‡ˆ‰Š‹Œ Ž ‘’“”•–—˜™š›œ žŸ".split("").map((c) => c.codePointAt(0))
+);
+
+/** Make a string safe for the built-in PDF fonts — never throws on render. */
+function sanitizeForPdf(input: string): string {
+  if (!input) return "";
+  let out = "";
+  for (const ch of input) {
+    const mapped = SYMBOL_MAP[ch];
+    if (mapped !== undefined) {
+      out += mapped;
+      continue;
+    }
+    const cp = ch.codePointAt(0)!;
+    if (cp <= 0xff || WINANSI_EXTRA.has(cp)) out += ch; // encodable → keep
+    // else: emoji, variation selectors, CJK, Devanagari, … → drop silently
+  }
+  // Collapse whitespace runs left by dropped glyphs, but preserve newlines.
+  return out.replace(/[ \t]{2,}/g, " ");
+}
+
 /** Render marked inline tokens to react-pdf <Text> fragments. */
 function renderInline(
   tokens: Token[] | undefined,
@@ -309,11 +343,13 @@ export async function renderReportPdf(
   markdown: string
 ): Promise<Buffer> {
   keySeq = 0;
+  // Sanitize before lexing so every downstream Text node is font-safe.
+  const md = sanitizeForPdf(markdown ?? "");
   let tokens: Token[] = [];
   try {
-    tokens = marked.lexer(markdown ?? "");
+    tokens = marked.lexer(md);
   } catch {
-    tokens = [{ type: "paragraph", raw: markdown, text: markdown } as Tokens.Paragraph];
+    tokens = [{ type: "paragraph", raw: md, text: md } as Tokens.Paragraph];
   }
 
   const blocks = tokens
@@ -326,7 +362,7 @@ export async function renderReportPdf(
     })
     .filter(Boolean);
 
-  const safeTitle = (title || "Research Report").trim();
+  const safeTitle = sanitizeForPdf((title || "Research Report").trim());
 
   const doc = (
     <Document title={safeTitle} author="MicroManus">
