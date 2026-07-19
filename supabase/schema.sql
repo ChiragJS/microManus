@@ -288,6 +288,13 @@ $$;
 revoke execute on function public.refund_credit(uuid) from public, anon, authenticated;
 grant execute on function public.refund_credit(uuid) to service_role;
 
+-- Lock down API-role execution: RPCs require a signed-in user; the signup
+-- trigger function is never called through the API.
+revoke execute on function public.consume_credit() from anon;
+revoke execute on function public.consume_credits(integer, text) from anon;
+revoke execute on function public.redeem_coupon(text) from anon;
+revoke execute on function public.handle_new_user() from anon, authenticated;
+
 -- ============ storage ============
 -- Public bucket for generated PDF artifacts
 insert into storage.buckets (id, name, public)
@@ -296,5 +303,5 @@ on conflict (id) do nothing;
 
 create policy "artifacts_insert_own" on storage.objects
   for insert with check (bucket_id = 'artifacts' and auth.uid()::text = (storage.foldername(name))[1]);
-create policy "artifacts_read_public" on storage.objects
-  for select using (bucket_id = 'artifacts');
+-- NOTE: no SELECT policy on purpose — the bucket is public, so objects are
+-- served by URL anyway; a broad SELECT policy would let clients LIST all files.
