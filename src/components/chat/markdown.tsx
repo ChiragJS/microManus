@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Globe } from "lucide-react";
+import { Globe, FileText } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /* Source extraction + favicon helpers                                 */
@@ -38,6 +38,14 @@ const MD_LINK = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
 const AUTO_LINK = /<(https?:\/\/[^>\s]+)>/g;
 const BARE_LINK = /(?<![("<])\bhttps?:\/\/[^\s)<>\]]+/g;
 
+/**
+ * Our own generated PDF artifacts live under the Supabase storage bucket path
+ * below. The model links them in its answer ("Download report…"), but they are
+ * NOT research sources — exclude them so the Sources rail shows only the real
+ * websites the agent read.
+ */
+const ARTIFACT_LINK = /\/storage\/v1\/object\/[^\s)]*\/artifacts\//i;
+
 /** Pull every http(s) link out of a markdown string, deduped by href. */
 export function extractSources(content: string): Source[] {
   if (!content) return [];
@@ -45,6 +53,7 @@ export function extractSources(content: string): Source[] {
   const add = (href: string, title: string) => {
     const clean = href.replace(/[.,;)]+$/, "");
     if (byHref.has(clean)) return;
+    if (ARTIFACT_LINK.test(clean)) return; // skip our own PDF download links
     const host = hostOf(clean);
     const label = title && !/^https?:\/\//.test(title) ? title.trim() : host;
     byHref.set(clean, { href: clean, host, title: label || host });
@@ -108,6 +117,21 @@ export function CitationLink({
   const raw = childrenToText(children).trim();
   const isBare = !raw || /^https?:\/\//.test(raw) || /^\[?\d+\]?$/.test(raw);
   const title = isBare ? host : raw;
+
+  // Our own generated PDF: render as a "Download PDF" chip, not a source pill.
+  if (ARTIFACT_LINK.test(url)) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mx-0.5 inline-flex items-center gap-1 rounded border border-accent/40 bg-accent-dim px-1.5 py-px align-middle text-[0.72rem] leading-none text-accent no-underline transition-opacity hover:opacity-80"
+      >
+        <FileText size={12} />
+        <span className="max-w-[16rem] truncate">{isBare ? "Download PDF" : raw}</span>
+      </a>
+    );
+  }
 
   return (
     <span className="group/cite relative inline-flex align-baseline">
