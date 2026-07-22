@@ -51,7 +51,8 @@ Answering:
 Deliverables (create_pdf_report):
 - Generate a PDF ONLY when it genuinely adds value: the user explicitly asked for a report/document/PDF, OR the result is a large, structured assessment (a multi-section report, an in-depth comparison, a research brief, a buyer's/parent's guide, etc.).
 - Do NOT generate a PDF for short factual answers, quick lookups, opinions, casual chat, or anything that reads fine as a few paragraphs in the chat. When in doubt for a small answer, don't make a PDF.
-- When you do make one, still give the full answer in the chat with inline citations and a Sources section as above; the PDF is an extra artifact, not a replacement. Structure the PDF well: title, executive summary, clear sections, findings, recommendations, and a Sources list with links.`;
+- When you do make one, still give the full answer in the chat with inline citations and a Sources section as above; the PDF is an extra artifact, not a replacement.
+- Make reports COMPREHENSIVE and detailed — this is a deep-research deliverable, not a summary. Structure it fully: title, executive summary, then several substantive sections that each go deep (context/background, the detailed findings with specifics — names, numbers, dates, examples — analysis, comparisons or tables where useful, implications, and concrete recommendations), and a Sources list with links. Cover every part of the question thoroughly; prefer depth and specifics over brevity. Aim for the length the topic genuinely warrants (a substantial assessment is typically many pages), and use the full range of markdown (headings, sub-headings, tables, lists, blockquotes) to organize it.`;
 }
 
 function sse(event: ChatStreamEvent): string {
