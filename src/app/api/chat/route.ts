@@ -17,7 +17,7 @@ import { AGENT_TOOLS, webSearch, fetchUrl, createPdfReport } from "@/lib/tools";
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
-const MAX_ITERATIONS = 12;
+const MAX_ITERATIONS = 20;
 const DELTA_CHUNK = 400;
 const THINKING_MAX = 600;
 
@@ -40,7 +40,7 @@ How to research well — the criteria that make research correct:
 - BREADTH of queries. Run several web_search calls with different angles and wordings — including one that looks for counter-evidence or the opposing view. Don't just confirm your first guess (avoid confirmation bias).
 - RECENCY. For anything that changes over time (news, prices, rankings, "current"/"latest"/"recent", this year), pass the web_search \`freshness\` parameter (day/week/month/year) to get fresh pages, put the year or a recency word in the query, and prefer results whose \`age\` is recent. When sources conflict and the topic is evolving, trust the newer, dated source and say so. Always mention how recent your key facts are (e.g. "as of <month year>").
 - AUTHORITY. Prefer primary and authoritative sources (official sites, filings, original publishers, standards bodies, reputable outlets) over SEO blogs, content farms, and undated aggregators. Judge each source's credibility and possible bias.
-- READ, don't skim. Use fetch_url to actually open the most promising 2-4 sources and verify claims in the page text — search snippets alone are not enough for anything important.
+- READ, don't skim. Use fetch_url to actually open sources and verify claims in the page text — search snippets alone are not enough. For a quick fact, 2-3 sources is fine; for a substantial assessment/report, go deeper: run more searches from different angles and read 5-8 high-quality sources in full before you conclude. Depth and source quality matter more than speed here.
 - TRIANGULATE. Corroborate every important claim (especially numbers, dates, names) across at least two independent sources. If they disagree, report the discrepancy rather than picking one silently.
 - HONESTY. Never fabricate facts, numbers, quotes, or citations. Distinguish established fact from opinion, estimate, or speculation. State uncertainty and gaps plainly; if the web doesn't support a claim, say so.
 
@@ -226,6 +226,9 @@ export async function POST(request: Request) {
             model: chat.model,
             messages: history,
             tools: AGENT_TOOLS,
+            // Room to write a full report (incl. large create_pdf_report args)
+            // without truncating mid-answer.
+            maxTokens: 16000,
           });
 
           usage.inputTokens += result.usage.inputTokens;

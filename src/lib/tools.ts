@@ -34,7 +34,7 @@ export const AGENT_TOOLS: LlmTool[] = [
   {
     name: "fetch_url",
     description:
-      "Fetch a web page (http/https only) and return its readable text content, truncated to ~10,000 characters. Use to read and verify sources found via web_search.",
+      "Fetch a web page (http/https only) and return its readable text content, truncated to ~18,000 characters. Use to actually READ and verify the most authoritative sources found via web_search — don't rely on search snippets for anything important.",
     parameters: {
       type: "object",
       properties: {
@@ -126,7 +126,7 @@ export async function webSearch(query: string, freshness?: string): Promise<stri
   }
 }
 
-const FETCH_LIMIT = 10000;
+const FETCH_LIMIT = 18000;
 
 /** Fetch a URL and return readable, whitespace-collapsed text (truncated). */
 export async function fetchUrl(url: string): Promise<string> {
