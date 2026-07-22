@@ -11,13 +11,20 @@ export const AGENT_TOOLS: LlmTool[] = [
   {
     name: "web_search",
     description:
-      "Search the web via Brave Search. Returns up to 6 results as JSON [{title, url, snippet}]. Use multiple targeted queries to gather and cross-check facts.",
+      "Search the web via Brave Search. Returns up to 10 results as JSON [{title, url, snippet, age}] where `age` is how recently the page was published/updated (null if unknown). Run MULTIPLE targeted queries per question and cross-check facts across independent sources. For anything time-sensitive (news, current events, prices, rankings, 'latest'/'recent'/this year), set `freshness` to restrict results to recent pages and prefer results with a recent `age`.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "The search query. Be specific and targeted.",
+          description:
+            "A specific, targeted query. Include the year or a recency term (e.g. '2026', 'latest') when currency matters.",
+        },
+        freshness: {
+          type: "string",
+          enum: ["day", "week", "month", "year", "any"],
+          description:
+            "Restrict results by recency: 'day' = past 24h, 'week' = past 7 days, 'month' = past 31 days, 'year' = past 12 months, 'any' = no limit. Use a tight window for news/current events; 'any' for stable/historical facts.",
         },
       },
       required: ["query"],
@@ -61,10 +68,19 @@ interface BraveResult {
   title?: string;
   url?: string;
   description?: string;
+  age?: string;
+  page_age?: string;
 }
 
-/** Brave web search → compact JSON string of [{title, url, snippet}]. */
-export async function webSearch(query: string): Promise<string> {
+const FRESHNESS_MAP: Record<string, string> = {
+  day: "pd",
+  week: "pw",
+  month: "pm",
+  year: "py",
+};
+
+/** Brave web search → compact JSON string of [{title, url, snippet, age}]. */
+export async function webSearch(query: string, freshness?: string): Promise<string> {
   const apiKey = process.env.BRAVE_SEARCH_API_KEY;
   if (!apiKey) {
     return JSON.stringify({ error: "Web search is unavailable: BRAVE_SEARCH_API_KEY is not configured." });
@@ -73,9 +89,10 @@ export async function webSearch(query: string): Promise<string> {
     return JSON.stringify({ error: "Empty query." });
   }
   try {
-    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
-      query
-    )}&count=6`;
+    const brave = freshness && FRESHNESS_MAP[freshness];
+    const url =
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=10` +
+      (brave ? `&freshness=${brave}` : "");
     const res = await fetch(url, {
       headers: {
         Accept: "application/json",
@@ -91,10 +108,12 @@ export async function webSearch(query: string): Promise<string> {
     }
     const data = await res.json();
     const results: BraveResult[] = data?.web?.results ?? [];
-    const compact = results.slice(0, 6).map((r) => ({
+    const compact = results.slice(0, 10).map((r) => ({
       title: r.title ?? "",
       url: r.url ?? "",
       snippet: (r.description ?? "").replace(/<[^>]+>/g, ""),
+      // Recency signal so the agent can bias toward fresh sources.
+      age: r.age ?? (r.page_age ? r.page_age.slice(0, 10) : null),
     }));
     if (compact.length === 0) {
       return JSON.stringify({ results: [], note: "No results found." });
